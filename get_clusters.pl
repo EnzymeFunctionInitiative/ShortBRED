@@ -17,6 +17,11 @@ my $result = GetOptions(
 );
 
 
+my $usage =
+"$0 -ssn=path_to_ssn -accession-file=output_accession_list -cluster-file=output_cluster_list";
+
+die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $accFile or not defined $clusterFile or not $clusterFile;
+
 
 
 my $reader = XML::LibXML::Reader->new(location => $ssn);
@@ -150,9 +155,9 @@ sub getClusters {
         }
     }
 
-    foreach my $id (keys %$nodeIds) {
+    foreach my $id (@$nodeIds) {
         if (not exists $con{$id}) {
-            $super{$clusterId} = $id;
+            push @{$super{$clusterId}}, $id;
             $con{$id} = $clusterId;
             $clusterId++;
         }
