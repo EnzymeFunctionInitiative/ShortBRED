@@ -1,12 +1,20 @@
 #!/bin/env perl
 
+BEGIN {
+    die "Please load efishared before runing this script" if not $ENV{EFISHARED};
+    use lib $ENV{EFISHARED};
+}
 
 use strict;
 use warnings;
 
 use XML::LibXML::Reader;
 use Getopt::Long;
+use EFI::Annotations;
+use FindBin;
 
+use lib $FindBin::Bin . "/lib";
+use ShortBRED qw(expandUniRefIds);
 
 my ($ssn, $accFile, $clusterFile);
 
@@ -23,6 +31,7 @@ my $usage =
 die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $accFile or not defined $clusterFile or not $clusterFile;
 
 
+my $efiAnnoUtil = new EFI::Annotations;
 
 my $reader = XML::LibXML::Reader->new(location => $ssn);
 
@@ -90,28 +99,19 @@ sub getNodesAndEdges{
         $xmlNode = $tmpnode->firstChild;
         if ($reader->name() eq "node") {
             push @nodes, $xmlNode;
-            push @nodeIds, $xmlNode->getAttribute("label");;
+            my $nodeId = $xmlNode->getAttribute("label");
+            push @nodeIds, $nodeId;
+            my @expandedIds = expandUniRefIds($nodeId, $xmlNode, $efiAnnoUtil);
+            push @nodeIds, @expandedIds;
         } elsif($reader->name() eq "edge") {
             push @edges, $xmlNode;
             my $source = $xmlNode->getAttribute("source");
             my $target = $xmlNode->getAttribute("target");
 
             push @network, {source => $source, target => $target};
-#
-#            $network{$source} = {visited => 0, neighbors => []};
-#            push(@{ $network{$source}->{neighbors} }, $target);
-#            $network{$target} = {visited => 0, neighbors => []};
-#            push(@{ $network{$target}->{neighbors} }, $source);
-#
-#            #$degrees{$source} = 0 if not exists $degrees{$source};
-#            #$degrees{$target} = 0 if not exists $degrees{$target};
-#            #$degrees{$source}++;
-#            #$degrees{$target}++;
-#        } else {
-#            warn "not a node or an edge\n $tmpstring\n";
         }
     }
-#    return ($graphname, \@nodes, \@edges, \%degrees);
+    
     return \@network, \@nodeIds;
 }
 
@@ -165,7 +165,6 @@ sub getClusters {
 
     return (\%super, \%con);
 }
-
 
 
 

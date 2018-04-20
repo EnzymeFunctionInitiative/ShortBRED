@@ -87,14 +87,26 @@ my $submitFile = "";
 my $depId = 0;
 
 
+my $B;
+
+
+#######################################################################################################################
+# Unzip the file if necessary
+my $inputSsnZip = "";
+if ($inputSsn =~ m/\.zip/i) {
+    $inputSsnZip = $inputSsn;
+    $inputSsn =~ s/\.zip/.xgmml/i;
+}
+
 
 #######################################################################################################################
 # Get the clusters and accessions
 
-my $B = $S->getBuilder();
+$B = $S->getBuilder();
 $submitName = "sb_get_clusters";
-$B->resource(1, 1, "5gb");
+$B->resource(1, 1, "50gb");
 $B->addAction("module load $sbModule");
+$B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
 $B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile");
 $depId = doSubmit();
 
@@ -141,7 +153,7 @@ $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
 $B->resource(1, 1, "10gb");
 $B->addAction("module load $sbModule");
-$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile");
+$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 

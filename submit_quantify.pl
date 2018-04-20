@@ -84,7 +84,9 @@ my $sbOutputDir = "$outputDir/quantify-temp";
 my $sbMarkerFile = "$inputDir/markers.faa";
 my $clusterResult = "$outputDir/$clusterFileName";
 my $proteinResult = "$outputDir/$proteinFileName";
-my $outputSsn = "$outputDir/$ssnName";
+my $clusterMerged = "$inputDir/$clusterFileName";
+my $proteinMerged = "$inputDir/$proteinFileName";
+my $outputSsn = "$inputDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
 my $submitFile = "";
@@ -140,11 +142,31 @@ $depId = doSubmit($depId);
 #######################################################################################################################
 # Build the XGMML file with the marker attributes and the abundances added added
 
+my $lockFile = "$inputDir/merge.lock";
+
 $B = $S->getBuilder();
+$B->setScriptAbortOnError(0); # Disable abort on error, so that we can disable the merged output lock.
 $submitName = "sb_q_make_xgmml";
 $B->resource(1, 1, "10gb");
 $B->addAction("module load $sbModule");
-$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -marker-file $sbMarkerFile -protein-file $proteinResult -cluster-file $clusterResult");
+$B->addAction("$efiSbDir/lock_merged_output.pl $lockFile lock");
+$B->addAction("OUT=\$?");
+$B->addAction("if [ \$OUT -ne 0 ]; then");
+$B->addAction("    echo \"unable to lock output\"");
+$B->addAction("    echo \$OUT > $outputDir/ssn.failed");
+$B->addAction("    rm -f $lockFile");
+$B->addAction("    exit 620");
+$B->addAction("fi");
+$B->addAction("$efiSbDir/merge_data.pl -input-dir $inputDir -quantify-dir-pat quantify- -merged-protein $proteinMerged -merged-cluster $clusterMerged -protein-name $proteinFileName -cluster-name $clusterFileName");
+$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMerged -cluster-file $clusterMerged -quantify");
+$B->addAction("OUT=\$?");
+$B->addAction("if [ \$OUT -ne 0 ]; then");
+$B->addAction("    echo \"make SSN failed.\"");
+$B->addAction("    echo \$OUT > $outputDir/ssn.failed");
+$B->addAction("    rm -f $lockFile");
+$B->addAction("    exit 621");
+$B->addAction("fi");
+$B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 
@@ -195,8 +217,9 @@ sub initDirectoryStructure {
     my $logDir = "$baseOutputDir/log";
     $logDir = "" if not -d $logDir;
 
-    my $scriptDir = "$baseOutputDir/scripts";
-    $scriptDir = $qOutputDir if not -d $scriptDir;
+    my $scriptDir = $qOutputDir;
+    #my $scriptDir = "$baseOutputDir/scripts";
+    #$scriptDir = $qOutputDir if not -d $scriptDir;
 
     return ($idOutputDir, $qOutputDir, $scriptDir, $logDir);
 }
