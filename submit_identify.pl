@@ -104,7 +104,7 @@ if ($inputSsn =~ m/\.zip/i) {
 
 $B = $S->getBuilder();
 $submitName = "sb_get_clusters";
-$B->resource(1, 1, "50gb");
+$B->resource(1, 1, "70gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
 $B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile");
@@ -134,7 +134,7 @@ $depId = doSubmit($depId);
 
 $B = $S->getBuilder();
 $submitName = "sb_identify";
-$B->resource(1, $np, "50gb");
+$B->resource(1, $np, "300gb");
 $B->addAction("module load $sbModule");
 #$B->addAction("module load $pythonMod");
 #$B->addAction("module load $biopythonMod");
@@ -151,7 +151,7 @@ $depId = doSubmit($depId);
 
 $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
-$B->resource(1, 1, "10gb");
+$B->resource(1, 1, "50gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile");
 $B->addAction("touch $outputDir/job.completed");

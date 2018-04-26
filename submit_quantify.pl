@@ -106,7 +106,7 @@ my @resFiles;
 
 my $B = $S->getBuilder();
 $submitName = "sb_quantify";
-$B->resource(1, $np, "50gb");
+$B->resource(1, $np, "300gb");
 $B->addAction("module load $sbModule");
 #$B->addAction("module load $pythonMod");
 #$B->addAction("module load $biopythonMod");
@@ -134,7 +134,7 @@ my $resFileList = join(" ", @resFiles);
 
 $B = $S->getBuilder();
 $submitName = "sb_merge_quantify";
-$B->resource(1, $np, "5gb");
+$B->resource(1, $np, "20gb");
 $B->addAction("python $localMergeApp $resFileList -C $clusterResult -p $proteinResult -c $ssnClusterFile");
 $depId = doSubmit($depId);
 
@@ -147,7 +147,7 @@ my $lockFile = "$inputDir/merge.lock";
 $B = $S->getBuilder();
 $B->setScriptAbortOnError(0); # Disable abort on error, so that we can disable the merged output lock.
 $submitName = "sb_q_make_xgmml";
-$B->resource(1, 1, "10gb");
+$B->resource(1, 1, "100gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile lock");
 $B->addAction("OUT=\$?");
