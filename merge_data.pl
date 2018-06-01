@@ -11,14 +11,15 @@ use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(getAbundanceData);
 
 
-my ($proteinMerged, $clusterMerged, $proteinName, $clusterName, $inputDir, $qDirPattern);
+my ($proteinMerged, $clusterMerged, $proteinName, $clusterName, $inputDir, $qDirPattern, $qDirInclude);
 my $result = GetOptions(
     "merged-protein=s"      => \$proteinMerged,
     "merged-cluster=s"      => \$clusterMerged,
     "protein-name=s"        => \$proteinName,
     "cluster-name=s"        => \$clusterName,
     "input-dir=s"           => \$inputDir,
-    "quantify-dir-pat=s"    => \$qDirPattern
+    "quantify-dir-pat=s"    => \$qDirPattern,
+    "force-include=s"       => \$qDirInclude,
 );
 
 my $usage = <<USAGE;
@@ -31,12 +32,19 @@ die $usage if not defined $inputDir or not defined $qDirPattern or
               not defined $proteinMerged or not defined $clusterMerged or
               not defined $clusterName or not defined $proteinName;
 
+$qDirInclude = "" if not defined $qDirInclude;
+
 
 my @dirs = glob("$inputDir/$qDirPattern*");
 
 my $allData = {metagenomes => {}, proteins => {}, clusters => {}};
 
 foreach my $dir (@dirs) {
+    if (not -f "$dir/job.completed" and not ($qDirInclude and $dir =~ m/$qDirInclude$/)) {
+        print "Skipping $dir since it doesn't appear to be completed.\n";
+        next; # Skip failed jobs
+    }
+
     my $proteinFile = "$dir/$proteinName";
     my $clusterFile = "$dir/$clusterName";
 

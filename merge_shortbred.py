@@ -212,7 +212,10 @@ def main( ):
     if args.sum_normalize:
         for name, sdict in dd.items( ):
             total = sum( sdict.values( ) )
-            dd[name] = {k: v / total for k, v in sdict.items( )}
+            if total > 0.0:
+                dd[name] = {k: v / total for k, v in sdict.items( )}
+            else:
+                dd[name] = {k: 0 for k, v in sdict.items( )}
     # write out the proteins file
     write_nested_dict( dd, args.protein_abundance_file )
     # collapse proteins to clusters

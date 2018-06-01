@@ -15,11 +15,12 @@ use Getopt::Long;
 use FindBin;
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(getAbundanceData expandUniRefIds);
+use ShortBRED qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo);
 use EFI::Annotations;
+use EFI::CdHitParser;
 
 
-my ($ssnIn, $ssnOut, $markerFile, $proteinFile, $clusterFile, $clusterMapFile, $isQuantify);
+my ($ssnIn, $ssnOut, $markerFile, $proteinFile, $clusterFile, $clusterMapFile, $isQuantify, $dbFiles, $metagenomeIdList, $cdhitFile);
 my $result = GetOptions(
     "ssn-in=s"              => \$ssnIn,
     "ssn-out=s"             => \$ssnOut,
@@ -28,6 +29,9 @@ my $result = GetOptions(
     "cluster-file=s"        => \$clusterFile,
     "cluster-map=s"         => \$clusterMapFile,
     "merge-ssn|quantify"    => \$isQuantify,
+    "metagenome-db=s"       => \$dbFiles,
+    "metagenome-ids=s"      => \$metagenomeIdList,
+    "cdhit-file=s"          => \$cdhitFile,
 );
 
 my $usage = <<USAGE;
@@ -40,7 +44,6 @@ die $usage if not defined $ssnIn or not -f $ssnIn or not defined $ssnOut or not 
 die $usage if not defined $isQuantify and (not defined $markerFile or not -f $markerFile);
 die $usage if defined $isQuantify and (not defined $proteinFile or not -f $proteinFile or not defined $clusterFile or not -f $clusterFile);
 
-
 $isQuantify = 0 if not defined $isQuantify;
 
 my $efiAnnoUtil = new EFI::Annotations;
@@ -48,6 +51,18 @@ my $efiAnnoUtil = new EFI::Annotations;
 my $markerData = {};
 my $clusterMap = {};
 my $abData = {};
+
+my @metagenomeIds;
+my $metagenomeInfo = {};
+if (defined $metagenomeIdList and $metagenomeIdList and defined $dbFiles and $dbFiles) {
+    @metagenomeIds = split(m/,/, $metagenomeIdList);
+    $metagenomeInfo = getMetagenomeInfo($dbFiles, @metagenomeIds);
+}
+
+my $cdhitInfo = {};
+if (defined $cdhitFile and -f $cdhitFile) {
+    $cdhitInfo = getCdHitClusters($cdhitFile);
+}
 
 # Only get marker data and cluster map if we're generating the data from the initial step
 if (not $isQuantify) {
@@ -63,7 +78,7 @@ my ($title, $nodes, $edges) = getNodesAndEdges($reader);
 my $output = new IO::File(">$ssnOut");
 my $writer = new XML::Writer(DATA_MODE => 'true', DATA_INDENT => 2, OUTPUT => $output);
 
-writeMarkerSsn($nodes, $edges, $writer, $title, $markerData, $clusterMap, $abData);
+writeMarkerSsn($nodes, $edges, $writer, $title, $markerData, $clusterMap, $abData, $metagenomeInfo, $cdhitInfo);
 
 
 
@@ -95,31 +110,6 @@ sub getMarkerData {
 
     return $markerData;
 }
-
-
-sub getClusterMap {
-    my $file = shift;
-
-    my $data = {};
-    
-    if (not defined $file or not -f $file) {
-        return $data;
-    }
-
-    open FILE, $file;
-
-    while (<FILE>) {
-        chomp;
-        my ($cluster, $protein) = split(m/\t/);
-        $cluster = "N/A" if not defined $cluster or not length $cluster;
-        $data->{$protein} = $cluster if defined $protein and $protein;
-    }
-
-    close FILE;
-
-    return $data;
-}
-
 
 
 sub getNodesAndEdges{
@@ -167,9 +157,11 @@ sub writeMarkerSsn {
     my $markerData = shift;
     my $clusterMap = shift;
     my $abData = shift;
+    my $mgInfo = shift;
+    my $cdhitInfo = shift;
 
     $writer->startTag('graph', 'label' => $title . " ShortBRED markers", 'xmlns' => 'http://www.cs.rpi.edu/XGMML');
-    writeMarkerSsnNodes($nodes, $writer, $markerData, $clusterMap, $abData);
+    writeMarkerSsnNodes($nodes, $writer, $markerData, $clusterMap, $abData, $mgInfo, $cdhitInfo);
     writeMarkerSsnEdges($edges, $writer, $markerData);
     $writer->endTag(); 
 }
@@ -181,11 +173,14 @@ sub writeMarkerSsnNodes {
     my $markerData = shift;
     my $clusterMap = shift;
     my $abd = shift; # Protein and cluster abundance dataa
+    my $mgInfo = shift;
+    my $cdhitInfo = shift;
 
     foreach my $node (@{$nodes}) {
-        my $nodeId = $node->getAttribute('label');
+        my $protId = $node->getAttribute('label');
+        my $nodeId = $node->getAttribute('id');
 
-        $writer->startTag('node', 'id' => $nodeId, 'label' => $nodeId);
+        $writer->startTag('node', 'id' => $nodeId, 'label' => $protId);
 
         foreach my $attribute ($node->getChildnodes) {
             if ($attribute=~/^\s+$/) {
@@ -218,7 +213,7 @@ sub writeMarkerSsnNodes {
             }
         }
 
-        writeResults($writer, $nodeId, $node, $markerData, $clusterMap, $abd);
+        writeResults($writer, $protId, $node, $markerData, $clusterMap, $abd, $mgInfo, $cdhitInfo);
         
         $writer->endTag(  );
     }
@@ -232,12 +227,14 @@ sub writeResults {
     my $markerData = shift;
     my $clusterMap = shift;
     my $abd = shift; # Protein and cluster abundance dataa
+    my $mgInfo = shift;
+    my $cdhitInfo = shift;
 
     my @xids = expandUniRefIds($nodeId, $node, $efiAnnoUtil);
     push @xids, $nodeId; # xids = expanded IDs
 
     if ($isQuantify) {
-        writeQuantifyResults($writer, $abd, @xids);
+        writeQuantifyResults($writer, $abd, $nodeId, $mgInfo, $cdhitInfo, @xids);
     } else {
         writeMarkerResults($writer, $markerData, $clusterMap, @xids);
     }
@@ -247,27 +244,75 @@ sub writeResults {
 sub writeQuantifyResults {
     my $writer = shift;
     my $abd = shift;
+    my $origId = shift;
+    my $mgInfo = shift;
+    my $cdhitInfo = shift;
     my @xids = @_;
 
     my $mgList = $abd->{metagenomes};
 
-    my (%mgVals);
+    my (@mg, @vals);
     foreach my $id (@xids) {
         next if not exists $abd->{proteins}->{$id};
-        for (my $i = 0; $i <= $#$mgList; $i++) {
-            my $mgId = $mgList->[$i];
-            my $hasVal = exists $abd->{proteins}->{$id}->{$mgId};
-            my $val = $hasVal ? $abd->{proteins}->{$id}->{$mgId} : "";
-            push @{$mgVals{$mgId}}, $val;
+        my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $id);
+        push @mg, @$mgLocal;
+        push @vals, @$valsLocal;
+#        for (my $i = 0; $i <= $#$mgList; $i++) {
+#            my $mgId = $mgList->[$i];
+#            my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
+#            my $val = $abd->{proteins}->{$id}->{$mgId};
+#            $hasVal = $hasVal ? $val > 0 : 0;
+#            if ($hasVal) {
+#                my $mgName = $mgId;
+#                $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
+#                $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
+#                push @mg, $mgName;
+#                push @vals, $abd->{proteins}->{$id}->{$mgId};
+#            }
+#        }
+    }
+    
+    my $hasHit = scalar @vals;
+    my $hasHitStr = $hasHit ? "true" : "false";
+    writeGnnField($writer, "Has Seed Sequence Metagenome Hit", "string", $hasHitStr);
+    if ($hasHit) {
+        writeGnnListField($writer, "Seed Sequence Metagenome Hits", "string", \@mg);
+    } elsif (exists $cdhitInfo->{$origId}) {
+        my $seedId = $cdhitInfo->{$origId};
+        my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seedId);
+        push @mg, @$mgLocal;
+        push @vals, @$valsLocal;
+        $hasHit = scalar @vals;
+        $hasHitStr = $hasHit ? "true" : "false";
+        writeGnnField($writer, "Has Sequence Metagenome Hit", "string", $hasHitStr);
+        writeGnnListField($writer, "Sequence Metagenome Hits", "string", \@mg);
+    }
+}
+
+
+sub getQuantifyVals {
+    my $abd = shift;
+    my $mgInfo = shift;
+    my $id = shift;
+
+    my $mgList = $abd->{metagenomes};
+
+    my (@mg, @vals);
+    for (my $i = 0; $i <= $#$mgList; $i++) {
+        my $mgId = $mgList->[$i];
+        my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
+        my $val = $abd->{proteins}->{$id}->{$mgId};
+        $hasVal = $hasVal ? $val > 0 : 0;
+        if ($hasVal) {
+            my $mgName = $mgId;
+            $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
+            $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
+            push @mg, $mgName;
+            push @vals, $abd->{proteins}->{$id}->{$mgId};
         }
     }
 
-    for (my $i = 0; $i <= $#$mgList; $i++) {
-        my $mgId = $mgList->[$i];
-        if (exists $mgVals{$mgId}) {
-            writeGnnListField($writer, $mgId, 'real', $mgVals{$mgId});
-        }
-    }
+    return(\@mg, \@vals);
 }
 
 
@@ -359,4 +404,26 @@ sub writeGnnListField {
     }
     $writer->endTag;
 }
+
+
+sub getCdHitClusters {
+    my $file = shift;
+
+    my $parser = new EFI::CdHitParser();
+    $parser->parse_file($file);
+
+    my $info = {};
+
+    foreach my $cluster ($parser->get_clusters()) {
+        foreach my $id ($parser->get_children($cluster)) {
+            if ($cluster ne $id) {
+                $info->{$id} = $cluster;
+            }
+        }
+    }
+
+    return $info;
+}
+
+
 

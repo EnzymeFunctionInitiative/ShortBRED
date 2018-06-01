@@ -5,7 +5,7 @@ use Exporter;
 
 @ISA         = qw(Exporter);
 @EXPORT      = ();
-@EXPORT_OK   = qw(getAbundanceData expandUniRefIds);
+@EXPORT_OK   = qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo);
 
 #our ($IdentifyScript, $QuantifyScript, $ParseSSNScript);
 #
@@ -14,6 +14,31 @@ use Exporter;
 #$ParseSSNScript = "parse_ssn.py";
 
 
+
+
+
+sub getClusterMap {
+    my $file = shift;
+
+    my $data = {};
+    
+    if (not defined $file or not -f $file) {
+        return $data;
+    }
+
+    open FILE, $file;
+
+    while (<FILE>) {
+        chomp;
+        my ($cluster, $protein) = split(m/\t/);
+        $cluster = "N/A" if not defined $cluster or not length $cluster;
+        $data->{$protein} = $cluster if defined $protein and $protein;
+    }
+
+    close FILE;
+
+    return $data;
+}
 
 
 
@@ -33,7 +58,7 @@ sub getAbundanceData {
 
         my $header = <PROT>;
         chomp($header);
-        my ($feat, @mg) = split(m/\t/, $header);
+        my ($hdrClusterNum, @mg) = split(m/\t/, $header);
         push(@{$abd->{metagenomes}}, @mg);
 
         while (<PROT>) {
@@ -89,6 +114,9 @@ sub getAbundanceData {
         close CLUST;
     }
 
+    use Data::Dumper;
+    print Dumper($abd->{metagenomes});
+
     return $abd;
 }
 
@@ -105,7 +133,7 @@ sub expandUniRefIds {
 
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
-        if ($efiAnnoUtil->is_expandable_attr($attrName)) {
+        if ($efiAnnoUtil->is_expandable_attr($attrName, $efiAnnoUtil->flag_uniref_only)) {
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
                 #make sure all accessions within the node are included in the gnn network
@@ -117,6 +145,30 @@ sub expandUniRefIds {
     }
 
     return @nodes;
+}
+
+
+sub getMetagenomeInfo {
+    my $dbList = shift;
+    my @ids = @_;
+
+    my $data = {};
+
+    my @dbs = split(m/,/, $dbList);
+    foreach my $dbFile (@dbs) {
+        (my $dbDir = $dbFile) =~ s%^(.*)/[^/]+$%$1%;
+        open DB, $dbFile or next;
+        while (<DB>) {
+            next if m/^#/;
+            chomp;
+            my ($id, $name, $desc, $file) = split(m/\t/);
+            $file = "$dbDir/$id/$file" if $file;
+            $data->{$id} = {name => $name, desc => $desc, file_path => $file};
+        }
+        close DB;
+    }
+
+    return $data;
 }
 
 

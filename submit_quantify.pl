@@ -14,7 +14,7 @@ use EFI::SchedulerApi;
 use EFI::Util qw(usesSlurm getLmod);
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED;
+use ShortBRED qw(getMetagenomeInfo);
 
 
 die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPATH};
@@ -22,6 +22,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 my ($dbFiles, $metagenomeIdList, $idResDirName, $qResDirName);
 my ($np, $queue, $scheduler, $dryRun, $jobId, $ssnName, $inputSsn, $proteinFileName, $clusterFileName);
+my ($proteinFileNameNormalized, $clusterFileNameNormalized);
 
 
 my $result = GetOptions(
@@ -34,6 +35,8 @@ my $result = GetOptions(
     "ssn-out-name=s"    => \$ssnName,
     "protein-file=s"    => \$proteinFileName,
     "cluster-file=s"    => \$clusterFileName,
+    "protein-norm=s"    => \$proteinFileNameNormalized,
+    "cluster-norm=s"    => \$clusterFileNameNormalized,
 
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
@@ -55,6 +58,8 @@ my $usage =
     -ssn-out-name       name of output SSN (containing marker and protein and cluster info)
     -protein-file       name of output file containing protein abundances
     -cluster-file       name of output file containing cluster abundances
+    -protein-norm       name of output file containing normalized protein abundances
+    -cluster-norm       name of output file containing normalized cluster abundances
     
     -job-id             number of the job [optional]
     -np                 number of CPUs to use [optional, defaults to 24]
@@ -67,9 +72,9 @@ die $usage if not defined $dbFiles or not $dbFiles or not defined $metagenomeIdL
               or not defined $idResDirName or not $idResDirName or not defined $qResDirName
               or not $qResDirName or not defined $queue or not $queue;
 
-$np = 24 if not defined $np or not $np;
-$scheduler = "slurm" if not defined $scheduler or not $scheduler;
-$dryRun = 0 if not defined $dryRun;
+$np = 24                            if not defined $np or not $np;
+$scheduler = "slurm"                if not defined $scheduler or not $scheduler;
+$dryRun = 0                         if not defined $dryRun;
 
 my ($inputDir, $outputDir, $scriptDir, $logDir) = initDirectoryStructure();
 my ($S, $jobNamePrefix) = initScheduler($logDir);
@@ -79,13 +84,19 @@ my $sbModule = $ENV{SHORTBRED_MOD};
 my $sbQuantifyApp = $ENV{SHORTBRED_QUANTIFY};
 my $localMergeApp = "$efiSbDir/merge_shortbred.py";
 
+($clusterFileNameNormalized = $clusterFileName) =~ s/\.txt$/_normalized.txt/ if not defined $clusterFileNameNormalized or not $clusterFileNameNormalized;
+($proteinFileNameNormalized = $proteinFileName) =~ s/\.txt$/_normalized.txt/ if not defined $proteinFileNameNormalized or not $proteinFileNameNormalized;
 my $ssnClusterFile = "$inputDir/cluster";
 my $sbOutputDir = "$outputDir/quantify-temp";
 my $sbMarkerFile = "$inputDir/markers.faa";
 my $clusterResult = "$outputDir/$clusterFileName";
 my $proteinResult = "$outputDir/$proteinFileName";
+my $clusterResultNormalized = "$outputDir/$clusterFileNameNormalized";
+my $proteinResultNormalized = "$outputDir/$proteinFileNameNormalized";
 my $clusterMerged = "$inputDir/$clusterFileName";
 my $proteinMerged = "$inputDir/$proteinFileName";
+my $clusterMergedNormalized = "$inputDir/$clusterFileNameNormalized";
+my $proteinMergedNormalized = "$inputDir/$proteinFileNameNormalized";
 my $outputSsn = "$inputDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
@@ -136,6 +147,7 @@ $B = $S->getBuilder();
 $submitName = "sb_merge_quantify";
 $B->resource(1, $np, "20gb");
 $B->addAction("python $localMergeApp $resFileList -C $clusterResult -p $proteinResult -c $ssnClusterFile");
+$B->addAction("python $localMergeApp $resFileList -C $clusterResultNormalized -p $proteinResultNormalized -c $ssnClusterFile -n");
 $depId = doSubmit($depId);
 
 
@@ -148,6 +160,8 @@ $B = $S->getBuilder();
 $B->setScriptAbortOnError(0); # Disable abort on error, so that we can disable the merged output lock.
 $submitName = "sb_q_make_xgmml";
 $B->resource(1, 1, "100gb");
+$B->addAction("MGIDS=\"$metagenomeIdList\"");
+$B->addAction("MGDB=\"$dbFiles\"");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile lock");
 $B->addAction("OUT=\$?");
@@ -157,8 +171,9 @@ $B->addAction("    echo \$OUT > $outputDir/ssn.failed");
 $B->addAction("    rm -f $lockFile");
 $B->addAction("    exit 620");
 $B->addAction("fi");
-$B->addAction("$efiSbDir/merge_data.pl -input-dir $inputDir -quantify-dir-pat quantify- -merged-protein $proteinMerged -merged-cluster $clusterMerged -protein-name $proteinFileName -cluster-name $clusterFileName");
-$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMerged -cluster-file $clusterMerged -quantify");
+$B->addAction("$efiSbDir/merge_data.pl -input-dir $inputDir -quantify-dir-pat quantify- -force-include $qResDirName -merged-protein $proteinMerged -merged-cluster $clusterMerged -protein-name $proteinFileName -cluster-name $clusterFileName");
+$B->addAction("$efiSbDir/merge_data.pl -input-dir $inputDir -quantify-dir-pat quantify- -force-include $qResDirName -merged-protein $proteinMergedNormalized -merged-cluster $clusterMergedNormalized -protein-name $proteinFileNameNormalized -cluster-name $clusterFileNameNormalized");
+$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMerged -cluster-file $clusterMerged -quantify -metagenome-db \$MGDB -metagenome-ids \$MGIDS");
 $B->addAction("OUT=\$?");
 $B->addAction("if [ \$OUT -ne 0 ]; then");
 $B->addAction("    echo \"make SSN failed.\"");
@@ -166,6 +181,7 @@ $B->addAction("    echo \$OUT > $outputDir/ssn.failed");
 $B->addAction("    rm -f $lockFile");
 $B->addAction("    exit 621");
 $B->addAction("fi");
+$B->addAction("zip -j $outputSsn.zip $outputSsn");
 $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
@@ -225,27 +241,5 @@ sub initDirectoryStructure {
 }
 
 
-sub getMetagenomeInfo {
-    my $dbList = shift;
-    my @ids = @_;
-
-    my $data = {};
-
-    my @dbs = split(m/,/, $dbList);
-    foreach my $dbFile (@dbs) {
-        (my $dbDir = $dbFile) =~ s%^(.*)/[^/]+$%$1%;
-        open DB, $dbFile or next;
-        while (<DB>) {
-            next if m/^#/;
-            chomp;
-            my ($id, $name, $desc, $file) = split(m/\t/);
-            $file = "$dbDir/$id/$file" if $file;
-            $data->{$id} = {name => $name, desc => $desc, file_path => $file};
-        }
-        close DB;
-    }
-
-    return $data;
-}
 
 

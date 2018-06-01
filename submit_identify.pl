@@ -12,6 +12,7 @@ use Getopt::Long;
 use FindBin;
 use EFI::SchedulerApi;
 use EFI::Util qw(usesSlurm getLmod);
+use EFI::CdHitParser;
 
 use lib $FindBin::Bin . "/lib";
 use ShortBRED;
@@ -21,7 +22,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 
 my ($inputSsn, $outputDirName);
-my ($np, $queue, $scheduler, $dryRun, $jobId, $outputSsnName);
+my ($np, $queue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName);
 
 
 my $result = GetOptions(
@@ -29,6 +30,7 @@ my $result = GetOptions(
     "ssn-in=s"          => \$inputSsn,
     "tmpdir=s"          => \$outputDirName,
     "ssn-out-name=s"    => \$outputSsnName,
+    "cdhit-out-name=s"  => \$cdhitFileName,
 
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
@@ -43,6 +45,7 @@ my $usage =
 
     -ssn-in         path to input SSN file (relative or absolute)
     -ssn-out-name   what to name the output xgmml file
+    -cdhit-out-name what to name the output cdhit mapping table file
     -tmpdir         name of output directory (relative)
     -job-id         number of the job [optional]
     -np             number of CPUs to use [optional, defaults to 24]
@@ -69,6 +72,7 @@ my $muscleMod = getLmod("MUSCLE/3", "MUSCLE");
 my $blastMod = getLmod("BLAST+", "BLAST+");
 my $cdhitMod = getLmod("CD-HIT", "CD-HIT");
 my $blastDbPath = "$ENV{EFIDBPATH}/combined.fasta";
+my $dbSupport = "$ENV{EFIDBHOME}/support";
 my $dbModule = $ENV{EFIDBMOD};
 my $sbModule = $ENV{SHORTBRED_MOD};
 my $sbParseSsnApp = $ENV{SHORTBRED_PARSESSN};
@@ -80,6 +84,9 @@ my $ssnClusterFile = "$outputDir/cluster";
 my $fastaFile = "$outputDir/sequences.fa";
 my $sbOutputDir = "$outputDir/id-temp";
 my $sbMarkerFile = "$outputDir/markers.faa";
+my $cdhitFile = "$sbOutputDir/clust/clust.faa.clstr";
+my $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$outputDir/$cdhitFileName" : "$outputDir/cdhit.txt";
+my $colorFile = -f "$dbSupport/colors.tab" ? "$dbSupport/colors.tab" : "";
 my $ssnMarker = "$outputDir/$outputSsnName";
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
@@ -149,11 +156,14 @@ $depId = doSubmit($depId);
 #######################################################################################################################
 # Build the XGMML file with the marker attributes added
 
+my $colorFileArg = $colorFile ? "-color-file $colorFile" : "";
 $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
 $B->resource(1, 1, "50gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile");
+$B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
+$B->addAction("zip -j $ssnMarker.zip $ssnMarker");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 
