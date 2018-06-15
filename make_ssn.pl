@@ -64,6 +64,7 @@ if (defined $cdhitFile and -f $cdhitFile) {
     $cdhitInfo = getCdHitClusters($cdhitFile);
 }
 
+
 # Only get marker data and cluster map if we're generating the data from the initial step
 if (not $isQuantify) {
     $markerData = getMarkerData($markerFile);
@@ -274,9 +275,13 @@ sub writeQuantifyResults {
     
     my $hasHit = scalar @vals;
     my $hasHitStr = $hasHit ? "true" : "false";
-    writeGnnField($writer, "Has Seed Sequence Metagenome Hit", "string", $hasHitStr);
     if ($hasHit) {
-        writeGnnListField($writer, "Seed Sequence Metagenome Hits", "string", \@mg);
+        if (exists $cdhitInfo->{$origId}) {
+            my $seedId = $cdhitInfo->{$origId};
+            writeGnnField($writer, "Seed Sequence", "string", $seedId);
+        }
+        writeGnnField($writer, "Marker Has Metagenome Hit", "string", $hasHitStr);
+        writeGnnListField($writer, "Marker Metagenome Hits", "string", \@mg);
     } elsif (exists $cdhitInfo->{$origId}) {
         my $seedId = $cdhitInfo->{$origId};
         my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seedId);
@@ -284,8 +289,13 @@ sub writeQuantifyResults {
         push @vals, @$valsLocal;
         $hasHit = scalar @vals;
         $hasHitStr = $hasHit ? "true" : "false";
-        writeGnnField($writer, "Has Sequence Metagenome Hit", "string", $hasHitStr);
-        writeGnnListField($writer, "Sequence Metagenome Hits", "string", \@mg);
+        writeGnnField($writer, "Seed Sequence", "string", $seedId);
+        if (exists $abd->{proteins}->{$seedId}) {
+            writeGnnField($writer, "Seed Sequence Has Metagenome Hit", "string", $hasHitStr);
+            writeGnnListField($writer, "Seed Sequence Metagenome Hits", "string", \@mg);
+        }
+    } else {
+        writeGnnField($writer, "Marker Has Metagenome Hit", "string", $hasHitStr);
     }
 }
 
@@ -345,6 +355,9 @@ sub writeMarkerResults {
         writeGnnListField($writer, 'ShortBRED SSN Cluster', 'integer', \@markerClusters);
     } else {
         writeGnnField($writer, 'Is Marker', 'string', "false");
+        if (scalar @xids and exists $clusterMap->{$xids[0]}) {
+            writeGnnListField($writer, 'ShortBRED SSN Cluster', 'integer', [$clusterMap->{$xids[0]}]);
+        }
     }
 }
 
@@ -409,18 +422,25 @@ sub writeGnnListField {
 sub getCdHitClusters {
     my $file = shift;
 
-    my $parser = new EFI::CdHitParser();
-    $parser->parse_file($file);
-
     my $info = {};
 
-    foreach my $cluster ($parser->get_clusters()) {
-        foreach my $id ($parser->get_children($cluster)) {
-            if ($cluster ne $id) {
-                $info->{$id} = $cluster;
-            }
-        }
+    open FILE, $file or warn "Unable to read CD-HIT results table $file: $!";
+
+    while (<FILE>) {
+        chomp;
+        my ($seed, $id) = split(m/\t/);
+        $info->{$id} = $seed;
     }
+
+    close FILE;
+
+#    foreach my $cluster ($parser->get_clusters()) {
+#        foreach my $id ($parser->get_children($cluster)) {
+#            if ($cluster ne $id) {
+#                $info->{$id} = $cluster;
+#            }
+#        }
+#    }
 
     return $info;
 }

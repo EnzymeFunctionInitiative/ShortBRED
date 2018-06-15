@@ -22,7 +22,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 
 my ($inputSsn, $outputDirName);
-my ($np, $queue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName);
+my ($np, $queue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
 
 
 my $result = GetOptions(
@@ -31,6 +31,8 @@ my $result = GetOptions(
     "tmpdir=s"          => \$outputDirName,
     "ssn-out-name=s"    => \$outputSsnName,
     "cdhit-out-name=s"  => \$cdhitFileName,
+
+    "parent-job-id=i"   => \$parentJobId,
 
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
@@ -61,9 +63,16 @@ die $usage if not defined $inputSsn or not -f $inputSsn or not defined $outputDi
 $np = 24 if not defined $np or not $np;
 $scheduler = "slurm" if not defined $scheduler or not $scheduler;
 $dryRun = 0 if not defined $dryRun;
+$parentJobId = 0 if not defined $parentJobId;
 
-my ($outputDir, $scriptDir, $logDir) = initDirectoryStructure();
+my ($outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentJobId);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
+
+# If we are linking to a parent job, most of the files we are using are in the parent output dir.
+my $childOutputDir = $outputDir;
+if (defined $parentJobId and $parentJobId) {
+    $outputDir = $parentOutputDir;
+}
 
 my $pythonMod = getLmod("Python/2", "Python");
 my $biopythonMod = getLmod("Biopython", "Biopython");
@@ -93,6 +102,13 @@ my $submitName = "";
 my $submitFile = "";
 my $depId = 0;
 
+if ($parentJobId) {
+    $ssnAccessionFile = "$childOutputDir/accession";
+    $ssnClusterFile = "$childOutputDir/cluster";
+    $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$childOutputDir/$cdhitFileName" : "$childOutputDir/cdhit.txt";
+    $ssnMarker = "$childOutputDir/$outputSsnName";
+}
+
 
 my $B;
 
@@ -118,39 +134,35 @@ $B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAcce
 $depId = doSubmit();
 
 
-#######################################################################################################################
-# Get the FASTA files from the database
-
-$B = $S->getBuilder();
-$submitName = "sb_get_fasta";
-$B->resource(1, 1, "5gb");
-$B->addAction("module load $sbModule");
-$B->addAction("module load $dbModule");
-$B->addAction("$efiSbDir/get_fasta.pl -id-file $ssnAccessionFile -output $fastaFile -blast-db $blastDbPath");
-$B->addAction("SZ=`stat -c%s $ssnAccessionFile`");
-$B->addAction("if [[ \$SZ == 0 ]]; then");
-$B->addAction("    echo \"Unable to find any FASTA sequences. Check input file.\"");
-$B->addAction("    touch $outputDir/get_fasta.failed");
-$B->addAction("    exit 1");
-$B->addAction("fi");
-$depId = doSubmit($depId);
-
-
-#######################################################################################################################
-# Run ShortBRED-Identify
-
-$B = $S->getBuilder();
-$submitName = "sb_identify";
-$B->resource(1, $np, "300gb");
-$B->addAction("module load $sbModule");
-#$B->addAction("module load $pythonMod");
-#$B->addAction("module load $biopythonMod");
-#$B->addAction("module load $usearchMod");
-#$B->addAction("module load $muscleMod");
-#$B->addAction("module load $blastMod");
-#$B->addAction("module load $cdhitMod");
-$B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir");
-$depId = doSubmit($depId);
+if (not $parentJobId) {
+    #######################################################################################################################
+    # Get the FASTA files from the database
+    
+    $B = $S->getBuilder();
+    $submitName = "sb_get_fasta";
+    $B->resource(1, 1, "5gb");
+    $B->addAction("module load $sbModule");
+    $B->addAction("module load $dbModule");
+    $B->addAction("$efiSbDir/get_fasta.pl -id-file $ssnAccessionFile -output $fastaFile -blast-db $blastDbPath");
+    $B->addAction("SZ=`stat -c%s $ssnAccessionFile`");
+    $B->addAction("if [[ \$SZ == 0 ]]; then");
+    $B->addAction("    echo \"Unable to find any FASTA sequences. Check input file.\"");
+    $B->addAction("    touch $outputDir/get_fasta.failed");
+    $B->addAction("    exit 1");
+    $B->addAction("fi");
+    $depId = doSubmit($depId);
+    
+    
+    #######################################################################################################################
+    # Run ShortBRED-Identify
+    
+    $B = $S->getBuilder();
+    $submitName = "sb_identify";
+    $B->resource(1, $np, "300gb");
+    $B->addAction("module load $sbModule");
+    $B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir");
+    $depId = doSubmit($depId);
+}
 
 
 #######################################################################################################################
@@ -164,7 +176,7 @@ $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile");
 $B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
 $B->addAction("zip -j $ssnMarker.zip $ssnMarker");
-$B->addAction("touch $outputDir/job.completed");
+$B->addAction("touch $childOutputDir/job.completed");
 $depId = doSubmit($depId);
 
 
@@ -206,6 +218,8 @@ sub initScheduler {
 }
 
 sub initDirectoryStructure {
+    my $parentId = shift;
+    
     my $baseOutputDir = $ENV{PWD};
     my $outputDir = "$baseOutputDir/$outputDirName";
     mkdir $outputDir if not $dryRun;
@@ -218,7 +232,13 @@ sub initDirectoryStructure {
     mkdir $scriptDir if not $dryRun;
     $scriptDir = $outputDir if not -d $scriptDir;
 
-    return ($outputDir, $scriptDir, $logDir);
+    my $parentOutputDir = "";
+    if ($parentId) {
+        ($parentOutputDir = $baseOutputDir) =~ s%/(\d+)/*$%/$parentId%;
+        $parentOutputDir .= "/$outputDirName";
+    }
+
+    return ($outputDir, $parentOutputDir, $scriptDir, $logDir);
 }
 
 

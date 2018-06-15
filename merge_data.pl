@@ -11,7 +11,7 @@ use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(getAbundanceData);
 
 
-my ($proteinMerged, $clusterMerged, $proteinName, $clusterName, $inputDir, $qDirPattern, $qDirInclude);
+my ($proteinMerged, $clusterMerged, $proteinName, $clusterName, $inputDir, $qDirPattern, $qDirInclude, $clusterListFile);
 my $result = GetOptions(
     "merged-protein=s"      => \$proteinMerged,
     "merged-cluster=s"      => \$clusterMerged,
@@ -20,12 +20,15 @@ my $result = GetOptions(
     "input-dir=s"           => \$inputDir,
     "quantify-dir-pat=s"    => \$qDirPattern,
     "force-include=s"       => \$qDirInclude,
+    "cluster-list-file=s"   => \$clusterListFile,
 );
 
 my $usage = <<USAGE;
 $0 -input-dir path_to_input_dir -quantify-dir-pat name_pattern_of_quantify_results_dirs
     -protein-name name_of_protein_abundance_file -cluster-name name-of_cluster_abundance_file
     -merged-protein path_to_merged_protein_abundance_file -merged-cluster path_to_merged_cluster_abundance_file
+    -force-includes quantify_dir_to_include_even_if_its_not_completed
+    -cluster-list-file path_to_cluster_map_file
 USAGE
 
 die $usage if not defined $inputDir or not defined $qDirPattern or
@@ -33,6 +36,14 @@ die $usage if not defined $inputDir or not defined $qDirPattern or
               not defined $clusterName or not defined $proteinName;
 
 $qDirInclude = "" if not defined $qDirInclude;
+
+my $clusterSizes = {};
+my $hasClusterSize = 0;
+if (defined $clusterListFile and -f $clusterListFile) {
+    $clusterSizes = getClusterSizes($clusterListFile);
+    $hasClusterSize = length keys %$clusterSizes;
+}
+
 
 
 my @dirs = glob("$inputDir/$qDirPattern*");
@@ -67,13 +78,12 @@ foreach my $dir (@dirs) {
     }
 }
 
-
 my @mgIds = sort keys %{$allData->{metagenomes}};
 
 
 open PROT, "> $proteinMerged" or die "Unable to write to merged-protein $proteinMerged: $!";
 
-print PROT join("\t", "Cluster", "Feature/Sample", @mgIds), "\n";
+print PROT join("\t", "Cluster", "Protein ID", @mgIds), "\n";
 
 my @prots = sort protSortFn keys %{$allData->{proteins}};
 
@@ -98,7 +108,10 @@ close PROT;
 
 open CLUST, "> $clusterMerged" or die "Unable to write to merged-protein $clusterMerged: $!";
 
-print CLUST join("\t", "Feature \ Sample", @mgIds), "\n";
+my @headers = ("Cluster");
+push @headers, "Cluster Size" if $hasClusterSize;
+push @headers, @mgIds;
+print CLUST join("\t", @headers), "\n";
 
 my @clusters = sort numericSortFn keys %{$allData->{clusters}};
 
@@ -112,7 +125,11 @@ foreach my $cluster (@clusters) {
         }
     }
 
-    print CLUST join("\t", $cluster, @res), "\n";
+    my @row = $cluster;
+    push @row, (exists $clusterSizes->{$cluster} ? $clusterSizes->{$cluster} : 0) if $hasClusterSize;
+    push @row, @res;
+
+    print CLUST join("\t", @row), "\n";
 }
 
 close CLUST;
@@ -151,5 +168,23 @@ sub numericSortFn {
 }
 
 
+sub getClusterSizes {
+    my $file = shift;
+
+    my $data = {};
+
+    open FILE, $file or die "Unable to open cluster size file $file: $!";
+
+    while (<FILE>) {
+        chomp;
+        my ($cluster, $id) = split(m/\t/);
+        $data->{$cluster} = 0 if not exists $data->{$cluster};
+        $data->{$cluster}++;
+    }
+
+    close FILE;
+
+    return $data;
+}
 
 

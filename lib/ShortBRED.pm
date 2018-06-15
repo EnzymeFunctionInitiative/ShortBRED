@@ -114,9 +114,6 @@ sub getAbundanceData {
         close CLUST;
     }
 
-    use Data::Dumper;
-    print Dumper($abd->{metagenomes});
-
     return $abd;
 }
 

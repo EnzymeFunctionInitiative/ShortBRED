@@ -12,6 +12,7 @@ use XML::LibXML::Reader;
 use Getopt::Long;
 use EFI::Annotations;
 use FindBin;
+use Data::Dumper;
 
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandUniRefIds);
@@ -105,8 +106,19 @@ sub getNodesAndEdges{
             push @nodeIds, @expandedIds;
         } elsif($reader->name() eq "edge") {
             push @edges, $xmlNode;
-            my $source = $xmlNode->getAttribute("source");
-            my $target = $xmlNode->getAttribute("target");
+            
+            my $label = $xmlNode->getAttribute("label");
+            my ($source, $target);
+            if (defined $label) {
+                ($source, $target) = split(m/,/, $label);
+            }
+            if (not defined $source or not $source or not defined $target or not $target) {
+                $source = $xmlNode->getAttribute("source");
+                $target = $xmlNode->getAttribute("target");
+            }
+
+            die "$tmpstring: " . Dumper($xmlNode) if not $source;
+            die "Target" if not $target;
 
             push @network, {source => $source, target => $target};
         }
