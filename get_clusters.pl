@@ -15,14 +15,15 @@ use FindBin;
 use Data::Dumper;
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(expandUniRefIds);
+use ShortBRED qw(expandUniRefIds getClusterNumber);
 
-my ($ssn, $accFile, $clusterFile);
+my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering );
 
 my $result = GetOptions(
     "ssn=s"             => \$ssn,
     "accession-file=s"  => \$accFile,
     "cluster-file=s"    => \$clusterFile,
+    "default-numbering" => \$useDefaultClusterNumbering,
 );
 
 
@@ -31,14 +32,18 @@ my $usage =
 
 die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $accFile or not defined $clusterFile or not $clusterFile;
 
+$useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
+$useDefaultClusterNumbering = 0 if not defined $useDefaultClusterNumbering;
+
 
 my $efiAnnoUtil = new EFI::Annotations;
 
 my $reader = XML::LibXML::Reader->new(location => $ssn);
 
 #my ($name, $nodes, $edges, $degrees) = getNodesAndEdges($reader);
-my ($network, $nodeIds) = getNodesAndEdges($reader);
-my ($clusters, $constellations) = getClusters($network, $nodeIds);
+my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdges($reader);
+my ($clusters, $constellations) = getClusters($network, $nodeIds, $clusterNumbers);
+
 
 my @nodeIds = sort { scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}}) } keys %$clusters;
 
@@ -48,7 +53,8 @@ open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile:
 my $clusterCount = 1;
 foreach my $clusterId (@nodeIds) {
     foreach my $id (sort @{$clusters->{$clusterId}}) {
-        print CLUSTER join("\t", $clusterCount, $id), "\n";
+        my $clusterNumber = (not $useDefaultClusterNumbering and exists $clusterNumbers->{$id}) ? $clusterNumbers->{$id} : $clusterCount;
+        print CLUSTER join("\t", $clusterNumber, $id), "\n";
         print ACCESSION "$id\n";
     }
     $clusterCount++;
@@ -92,6 +98,7 @@ sub getNodesAndEdges{
 
     my @network;
     my @nodeIds;
+    my $clusterNumbers = {};
 
     my %degrees;
     while ($reader->nextSiblingElement()) {
@@ -103,6 +110,10 @@ sub getNodesAndEdges{
             my $nodeId = $xmlNode->getAttribute("label");
             push @nodeIds, $nodeId;
             my @expandedIds = expandUniRefIds($nodeId, $xmlNode, $efiAnnoUtil);
+            my $clusterNum = getClusterNumber($nodeId, $xmlNode);
+            if ($clusterNum) {
+                map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
+            }
             push @nodeIds, @expandedIds;
         } elsif($reader->name() eq "edge") {
             push @edges, $xmlNode;
@@ -124,13 +135,14 @@ sub getNodesAndEdges{
         }
     }
     
-    return \@network, \@nodeIds;
+    return \@network, \@nodeIds, $clusterNumbers;
 }
 
 
 sub getClusters {
     my $edges = shift;
     my $nodeIds = shift;
+    my $clusterNums = shift;
 
     my %con;
     my %super;

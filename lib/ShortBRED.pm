@@ -5,7 +5,7 @@ use Exporter;
 
 @ISA         = qw(Exporter);
 @EXPORT      = ();
-@EXPORT_OK   = qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo);
+@EXPORT_OK   = qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo getClusterNumber);
 
 #our ($IdentifyScript, $QuantifyScript, $ParseSSNScript);
 #
@@ -142,6 +142,22 @@ sub expandUniRefIds {
     }
 
     return @nodes;
+}
+
+
+sub getClusterNumber {
+    my $nodeId = shift;
+    my $xmlNode = shift;
+
+    my @annotations = $xmlNode->findnodes('./*');
+    foreach my $annotation (@annotations) {
+        my $attrName = $annotation->getAttribute('name');
+        if ($attrName eq "Cluster Number") {
+            return $annotation->getAttribute('value');
+        }
+    }
+
+    return 0;
 }
 
 
