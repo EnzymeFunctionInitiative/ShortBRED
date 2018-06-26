@@ -32,8 +32,8 @@ my $usage =
 
 die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $accFile or not defined $clusterFile or not $clusterFile;
 
-$useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
 $useDefaultClusterNumbering = 0 if not defined $useDefaultClusterNumbering;
+$useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
 
 
 my $efiAnnoUtil = new EFI::Annotations;
@@ -42,18 +42,22 @@ my $reader = XML::LibXML::Reader->new(location => $ssn);
 
 #my ($name, $nodes, $edges, $degrees) = getNodesAndEdges($reader);
 my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdges($reader);
-my ($clusters, $constellations) = getClusters($network, $nodeIds, $clusterNumbers);
+my ($clusters, $constellations) = getClusters($network, $nodeIds);
 
 
-my @nodeIds = sort { scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}}) } keys %$clusters;
+# Sort by cluster size
+my @clusterIds = sort { scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}}) } keys %$clusters;
 
 open CLUSTER, "> $clusterFile" or die "Unable to write to cluster file $clusterFile: $!";
 open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile: $!";
 
 my $clusterCount = 1;
-foreach my $clusterId (@nodeIds) {
+foreach my $clusterId (@clusterIds) {
     foreach my $id (sort @{$clusters->{$clusterId}}) {
-        my $clusterNumber = (not $useDefaultClusterNumbering and exists $clusterNumbers->{$id}) ? $clusterNumbers->{$id} : $clusterCount;
+        my $clusterNumber = $clusterCount;
+        if (exists $clusterNumbers->{$id}) {
+            $clusterNumber = $clusterNumbers->{$id};
+        }
         print CLUSTER join("\t", $clusterNumber, $id), "\n";
         print ACCESSION "$id\n";
     }
@@ -92,13 +96,21 @@ sub getNodesAndEdges{
     my $tmpnode = $parser->parse_string($tmpstring);
     my $xmlNode = $tmpnode->firstChild;
 
-    if ($reader->name() eq "node"){
-        push @nodes, $xmlNode;
-    }
-
     my @network;
     my @nodeIds;
     my $clusterNumbers = {};
+
+    if ($reader->name() eq "node"){
+        push @nodes, $xmlNode;
+        my $nodeId = $xmlNode->getAttribute("label");
+        push @nodeIds, $nodeId;
+        my @expandedIds = expandUniRefIds($nodeId, $xmlNode, $efiAnnoUtil);
+        my $clusterNum = getClusterNumber($nodeId, $xmlNode);
+        if ($clusterNum) {
+            map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
+        }
+        push @nodeIds, @expandedIds;
+    }
 
     my %degrees;
     while ($reader->nextSiblingElement()) {
@@ -142,7 +154,6 @@ sub getNodesAndEdges{
 sub getClusters {
     my $edges = shift;
     my $nodeIds = shift;
-    my $clusterNums = shift;
 
     my %con;
     my %super;

@@ -149,11 +149,13 @@ sub getClusterNumber {
     my $nodeId = shift;
     my $xmlNode = shift;
 
+
     my @annotations = $xmlNode->findnodes('./*');
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         if ($attrName eq "Cluster Number") {
-            return $annotation->getAttribute('value');
+            $val = $annotation->getAttribute('value');
+            return $val;
         }
     }
 
