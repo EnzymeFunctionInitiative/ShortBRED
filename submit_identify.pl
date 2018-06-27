@@ -135,15 +135,30 @@ $depId = doSubmit();
 
 
 if (not $parentJobId) {
+    # CD-HIT params
+    my $lenDiffCutoff = "1";
+    my $seqIdCutoff = "1";
+    my $tempFasta = "$fastaFile.cdhit100";
+    my $tempAcc = "$ssnAccessionFile.cdhit100";
+    my $tempCluster = "$ssnClusterFile.cdhit100";
+
     #######################################################################################################################
     # Get the FASTA files from the database
     
     $B = $S->getBuilder();
     $submitName = "sb_get_fasta";
-    $B->resource(1, 1, "5gb");
+    $B->resource(1, 1, "15gb");
     $B->addAction("module load $sbModule");
     $B->addAction("module load $dbModule");
     $B->addAction("$efiSbDir/get_fasta.pl -id-file $ssnAccessionFile -output $fastaFile -blast-db $blastDbPath");
+    $B->addAction("cd-hit -c $seqIdCutoff -s $lenDiffCutoff -i $fastaFile -o $tempFasta -M 14900");
+    $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $ssnAccessionFile -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $tempFasta.clstr");
+    $B->addAction("mv $fastaFile $fastaFile.full");
+    $B->addAction("mv $ssnAccessionFile $ssnAccessionFile.full");
+    $B->addAction("mv $ssnClusterFile $ssnClusterFile.full");
+    $B->addAction("mv $tempFasta $fastaFile");
+    $B->addAction("mv $tempAcc $ssnAccessionFile");
+    $B->addAction("mv $tempCluster $ssnClusterFile");
     $B->addAction("SZ=`stat -c%s $ssnAccessionFile`");
     $B->addAction("if [[ \$SZ == 0 ]]; then");
     $B->addAction("    echo \"Unable to find any FASTA sequences. Check input file.\"");

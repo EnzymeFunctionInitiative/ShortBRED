@@ -1,11 +1,12 @@
 
 package ShortBRED;
 
+
 use Exporter;
 
 @ISA         = qw(Exporter);
 @EXPORT      = ();
-@EXPORT_OK   = qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo getClusterNumber);
+@EXPORT_OK   = qw(getAbundanceData expandMetanodeIds getClusterMap getMetagenomeInfo getClusterNumber expandMetanodeIdAttribute);
 
 #our ($IdentifyScript, $QuantifyScript, $ParseSSNScript);
 #
@@ -118,11 +119,12 @@ sub getAbundanceData {
 }
 
 
-sub expandUniRefIds {
+# Expand metanodes into their constituent parts (e.g. expand UniRef seed sequence clusters, as well as SSN repnode networks).
+# Call this on an XML node that represents an SSN node.
+sub expandMetanodeIds {
     my $nodeId = shift;
     my $xmlNode = shift;
     my $efiAnnoUtil = shift;
-
 
     my @nodes;
 
@@ -130,7 +132,7 @@ sub expandUniRefIds {
 
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
-        if ($efiAnnoUtil->is_expandable_attr($attrName, $efiAnnoUtil->flag_uniref_only)) {
+        if ($efiAnnoUtil->is_expandable_attr($attrName)) {
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
                 #make sure all accessions within the node are included in the gnn network
@@ -154,7 +156,7 @@ sub getClusterNumber {
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         if ($attrName eq "Cluster Number") {
-            $val = $annotation->getAttribute('value');
+            my $val = $annotation->getAttribute('value');
             return $val;
         }
     }

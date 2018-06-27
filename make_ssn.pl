@@ -15,7 +15,7 @@ use Getopt::Long;
 use FindBin;
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(getAbundanceData expandUniRefIds getClusterMap getMetagenomeInfo);
+use ShortBRED qw(getAbundanceData expandMetanodeIds getClusterMap getMetagenomeInfo);
 use EFI::Annotations;
 use EFI::CdHitParser;
 
@@ -191,7 +191,6 @@ sub writeMarkerSsnNodes {
             } else {
                 my $attrType = $attribute->getAttribute('type');
                 my $attrName = $attribute->getAttribute('name');
-
                 if ($attrType eq 'list') {
                     $writer->startTag('att', 'type' => $attrType, 'name' => $attrName);
                     foreach my $listelement ($attribute->getElementsByTagName('att')) {
@@ -231,7 +230,7 @@ sub writeResults {
     my $mgInfo = shift;
     my $cdhitInfo = shift;
 
-    my @xids = expandUniRefIds($nodeId, $node, $efiAnnoUtil);
+    my @xids = expandMetanodeIds($nodeId, $node, $efiAnnoUtil);
     push @xids, $nodeId; # xids = expanded IDs
 
     if ($isQuantify) {

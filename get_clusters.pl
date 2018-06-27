@@ -15,7 +15,7 @@ use FindBin;
 use Data::Dumper;
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(expandUniRefIds getClusterNumber);
+use ShortBRED qw(expandMetanodeIds getClusterNumber);
 
 my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering );
 
@@ -104,7 +104,7 @@ sub getNodesAndEdges{
         push @nodes, $xmlNode;
         my $nodeId = $xmlNode->getAttribute("label");
         push @nodeIds, $nodeId;
-        my @expandedIds = expandUniRefIds($nodeId, $xmlNode, $efiAnnoUtil);
+        my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
         my $clusterNum = getClusterNumber($nodeId, $xmlNode);
         if ($clusterNum) {
             map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
@@ -121,7 +121,7 @@ sub getNodesAndEdges{
             push @nodes, $xmlNode;
             my $nodeId = $xmlNode->getAttribute("label");
             push @nodeIds, $nodeId;
-            my @expandedIds = expandUniRefIds($nodeId, $xmlNode, $efiAnnoUtil);
+            my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
             my $clusterNum = getClusterNumber($nodeId, $xmlNode);
             if ($clusterNum) {
                 map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
