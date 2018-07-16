@@ -51,17 +51,25 @@ my @clusterIds = sort { scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}}
 open CLUSTER, "> $clusterFile" or die "Unable to write to cluster file $clusterFile: $!";
 open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile: $!";
 
-my $clusterCount = 1;
+my $clusterCount = 0;
+my $singleCount = 0;
 foreach my $clusterId (@clusterIds) {
+    my $isSingle = scalar @{$clusters->{$clusterId}} == 1;
+    if ($isSingle) {
+        $singleCount++;
+    } else {
+        $clusterCount++;
+    }
     foreach my $id (sort @{$clusters->{$clusterId}}) {
         my $clusterNumber = $clusterCount;
         if (exists $clusterNumbers->{$id}) {
             $clusterNumber = $clusterNumbers->{$id};
+        } elsif ($isSingle) {
+            $clusterNumber = $singleCount;
         }
         print CLUSTER join("\t", $clusterNumber, $id), "\n";
         print ACCESSION "$id\n";
     }
-    $clusterCount++;
 }
 
 close ACCESSION;

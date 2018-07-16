@@ -133,11 +133,12 @@ sub expandMetanodeIds {
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         if ($efiAnnoUtil->is_expandable_attr($attrName)) {
+            print "Expanding $attrName\n";
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
                 #make sure all accessions within the node are included in the gnn network
                 my $attrAcc = $accessionlist->getAttribute('value');
-                #print "Expanded $nodeId into $attrAcc\n";
+                print "         Expanded $nodeId into $attrAcc\n";
                 push @nodes, $attrAcc if $nodeId ne $attrAcc;
             }
         }
@@ -151,17 +152,22 @@ sub getClusterNumber {
     my $nodeId = shift;
     my $xmlNode = shift;
 
+    # Due to a bug in GNT, multiple instances of the attributes may exist for the same node.  We
+    # don't exit the loop below until iterated through all attributes because we want to pick
+    # the last entry.
+    my $val = "";
 
     my @annotations = $xmlNode->findnodes('./*');
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         if ($attrName eq "Cluster Number") {
-            my $val = $annotation->getAttribute('value');
-            return $val;
+            $val = $annotation->getAttribute('value');
+        } elsif ($attrName eq "Singleton Number") {
+            $val = $annotation->getAttribute('value');
         }
     }
 
-    return 0;
+    return $val;
 }
 
 

@@ -22,7 +22,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 
 my ($inputSsn, $outputDirName);
-my ($np, $queue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
+my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
 
 
 my $result = GetOptions(
@@ -37,6 +37,7 @@ my $result = GetOptions(
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
     "queue=s"           => \$queue,
+    "mem-queue=s"       => \$memQueue,
     "scheduler=s"       => \$scheduler,
     "dryrun"            => \$dryRun,
 );
@@ -60,6 +61,7 @@ die $usage if not defined $inputSsn or not -f $inputSsn or not defined $outputDi
               not defined $queue or not $queue or not defined $outputSsnName or not $outputSsnName;
 
 
+$memQueue = $queue if not defined $memQueue or not $memQueue;
 $np = 24 if not defined $np or not $np;
 $scheduler = "slurm" if not defined $scheduler or not $scheduler;
 $dryRun = 0 if not defined $dryRun;
@@ -102,7 +104,9 @@ my $submitName = "";
 my $submitFile = "";
 my $depId = 0;
 
+my $ssnErrorDir = $outputDir;
 if ($parentJobId) {
+    $ssnErrorDir = $childOutputDir;
     $ssnAccessionFile = "$childOutputDir/accession";
     $ssnClusterFile = "$childOutputDir/cluster";
     $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$childOutputDir/$cdhitFileName" : "$childOutputDir/cdhit.txt";
@@ -127,10 +131,22 @@ if ($inputSsn =~ m/\.zip/i) {
 
 $B = $S->getBuilder();
 $submitName = "sb_get_clusters";
+$B->setScriptAbortOnError(0); # grep causes the script to abort if we have set -e in the script.
 $B->resource(1, 1, "70gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
+$B->addAction("HASCLUSTERNUM=`head -2000 $inputSsn | grep -m1 \"Cluster Number\"`");
+$B->addAction("if [[ \$HASCLUSTERNUM == \"\" ]]; then");
+$B->addAction("    echo \"ERROR: Cluster Number is not present in SSN\"");
+$B->addAction("    touch $ssnErrorDir/ssn_cl_num.failed");
+$B->addAction("    exit 1");
+$B->addAction("fi");
 $B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile");
+# Add this check because we disable set -e above for grep.
+$B->addAction("if [ $? != 0 ]; then");
+$B->addAction("    echo \"ERROR: in get_clusters.pl\"");
+$B->addAction("    exit 1");
+$B->addAction("fi");
 $depId = doSubmit();
 
 
@@ -141,6 +157,7 @@ if (not $parentJobId) {
     my $tempFasta = "$fastaFile.cdhit100";
     my $tempAcc = "$ssnAccessionFile.cdhit100";
     my $tempCluster = "$ssnClusterFile.cdhit100";
+    my $sortedAcc = "$ssnAccessionFile.sorted";
 
     #######################################################################################################################
     # Get the FASTA files from the database
@@ -150,9 +167,10 @@ if (not $parentJobId) {
     $B->resource(1, 1, "15gb");
     $B->addAction("module load $sbModule");
     $B->addAction("module load $dbModule");
-    $B->addAction("$efiSbDir/get_fasta.pl -id-file $ssnAccessionFile -output $fastaFile -blast-db $blastDbPath");
+    $B->addAction("sort $ssnAccessionFile > $sortedAcc");
+    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $blastDbPath");
     $B->addAction("cd-hit -c $seqIdCutoff -s $lenDiffCutoff -i $fastaFile -o $tempFasta -M 14900");
-    $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $ssnAccessionFile -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $tempFasta.clstr");
+    $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $sortedAcc -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $tempFasta.clstr");
     $B->addAction("mv $fastaFile $fastaFile.full");
     $B->addAction("mv $ssnAccessionFile $ssnAccessionFile.full");
     $B->addAction("mv $ssnClusterFile $ssnClusterFile.full");
@@ -186,10 +204,11 @@ if (not $parentJobId) {
 my $colorFileArg = $colorFile ? "-color-file $colorFile" : "";
 $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
-$B->resource(1, 1, "50gb");
+$B->queue($memQueue);
+$B->resource(1, 1, "200gb");
 $B->addAction("module load $sbModule");
-$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile");
 $B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
+$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile -cdhit-file $cdhitTableFile");
 $B->addAction("zip -j $ssnMarker.zip $ssnMarker");
 $B->addAction("touch $childOutputDir/job.completed");
 $depId = doSubmit($depId);

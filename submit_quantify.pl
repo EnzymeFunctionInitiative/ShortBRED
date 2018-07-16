@@ -21,7 +21,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 
 my ($dbFiles, $metagenomeIdList, $idResDirName, $qResDirName);
-my ($np, $queue, $scheduler, $dryRun, $jobId, $ssnName, $inputSsn, $proteinFileName, $clusterFileName);
+my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $ssnName, $inputSsn, $proteinFileName, $clusterFileName);
 my ($proteinFileNameNormalized, $clusterFileNameNormalized);
 my ($proteinFileNameGenomeNormalized, $clusterFileNameGenomeNormalized);
 my ($parentIdentifyId, $parentQuantifyId);
@@ -48,6 +48,7 @@ my $result = GetOptions(
     "job-id=i"                  => \$jobId,
     "np=i"                      => \$np,
     "queue=s"                   => \$queue,
+    "mem-queue=s"               => \$memQueue,
     "scheduler=s"               => \$scheduler,
     "dryrun"                    => \$dryRun,
 );
@@ -82,6 +83,7 @@ die $usage if not defined $dbFiles or not $dbFiles or not defined $metagenomeIdL
               or not defined $idResDirName or not $idResDirName or not defined $qResDirName
               or not $qResDirName or not defined $queue or not $queue;
 
+$memQueue = $queue                              if not defined $memQueue or not $memQueue;
 $np = 24                                        if not defined $np or not $np;
 $scheduler = "slurm"                            if not defined $scheduler or not $scheduler;
 $dryRun = 0                                     if not defined $dryRun;
@@ -194,7 +196,8 @@ my $mergeArgsShared = "-cluster-list-file $ssnClusterFile -input-dir $inputDir -
 $B = $S->getBuilder();
 $B->setScriptAbortOnError(0); # Disable abort on error, so that we can disable the merged output lock.
 $submitName = "sb_q_make_xgmml";
-$B->resource(1, 1, "100gb");
+$B->queue($memQueue);
+$B->resource(1, 1, "200gb");
 $B->addAction("MGIDS=\"$metagenomeIdList\"");
 $B->addAction("MGDB=\"$dbFiles\"");
 $B->addAction("module load $sbModule");
@@ -211,7 +214,7 @@ $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $protein
 if ($agsFilePath) {
     $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMergedGenomeNormalized -merged-cluster $clusterMergedGenomeNormalized -protein-name $proteinFileNameGenomeNormalized -cluster-name $clusterFileNameGenomeNormalized");
 }
-$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMerged -cluster-file $clusterMerged -cdhit-file $cdhitFile -quantify -metagenome-db \$MGDB -metagenome-ids \$MGIDS");
+$B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMergedGenomeNormalized -cluster-file $clusterMergedGenomeNormalized -cdhit-file $cdhitFile -quantify -metagenome-db \$MGDB -metagenome-ids \$MGIDS");
 $B->addAction("OUT=\$?");
 $B->addAction("if [ \$OUT -ne 0 ]; then");
 $B->addAction("    echo \"make SSN failed.\"");

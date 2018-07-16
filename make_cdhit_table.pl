@@ -47,8 +47,8 @@ my @clusters = $parser->get_clusters();
 
 open OUTPUT, "> $tableOutput" or die "Unable to open table output $tableOutput: $!";
 
-my @headers = ("CD-HIT Seed Sequence", "Protein", "ShortBRED Cluster Number");
-push(@headers, "CD-HIT Seed Sequence Color") if keys %$colors;
+my @headers = ("CD-HIT Seed Sequence", "Protein", "Cluster Number");
+push(@headers, "CD-HIT Seed Sequence Color (If has a Marker)") if keys %$colors;
 print OUTPUT join("\t", @headers), "\n";
 
 my $c = 1;
