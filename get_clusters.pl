@@ -53,19 +53,51 @@ open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile:
 
 my $clusterCount = 0;
 my $singleCount = 0;
+my @singles;
+
+#foreach my $clusterId (@clusterIds) {
+#    my @ids = sort @{$clusters->{$clusterId}};
+#    my $isSingle = scalar @ids == 1;
+#    if ($isSingle) {
+#        push @singles, $ids[0];
+#        next;
+#    }
+#    $clusterCount++;
+#    foreach my $id (@ids) {
+#        my $clusterNumber = $clusterCount;
+#        if (exists $clusterNumbers->{$id}) {
+#            $clusterNumber = $clusterNumbers->{$id};
+#        }
+#        print CLUSTER join("\t", $clusterNumber, $id), "\n";
+#        print ACCESSION "$id\n";
+#    }
+#}
+#
+#$singleCount = $clusterCount + 1;
+#foreach my $singleId (@singles) {
+#    $singleCount++;
+#    my $clusterNumber = $singleCount;
+#    if (exists $clusterNumbers->{$id}) {
+#        $clusterNumber = $clusterNumbers->{$id};
+#    }
+#    print CLUSTER join("\t", "S$clusterNumber", $id), "\n";
+#    print ACCESSION "$id\n";
+#}
+
 foreach my $clusterId (@clusterIds) {
-    my $isSingle = scalar @{$clusters->{$clusterId}} == 1;
+    my @ids = sort @{$clusters->{$clusterId}};
+    my $isSingle = scalar @ids == 1;
     if ($isSingle) {
         $singleCount++;
     } else {
         $clusterCount++;
     }
-    foreach my $id (sort @{$clusters->{$clusterId}}) {
+    foreach my $id (@ids) {
         my $clusterNumber = $clusterCount;
         if (exists $clusterNumbers->{$id}) {
             $clusterNumber = $clusterNumbers->{$id};
-        } elsif ($isSingle) {
-            $clusterNumber = $singleCount;
+#        } elsif ($isSingle) {
+#            $clusterNumber = $singleCount;
         }
         print CLUSTER join("\t", $clusterNumber, $id), "\n";
         print ACCESSION "$id\n";
@@ -131,6 +163,9 @@ sub getNodesAndEdges{
             push @nodeIds, $nodeId;
             my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
             my $clusterNum = getClusterNumber($nodeId, $xmlNode);
+            if ($nodeId eq "A0A101VZA3") {
+                print "CLUSTER: $clusterNum\n";
+            }
             if ($clusterNum) {
                 map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
             }

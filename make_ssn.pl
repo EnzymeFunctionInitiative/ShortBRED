@@ -266,60 +266,49 @@ sub writeQuantifyResults {
         }
         elsif (exists $cdhitInfo->{members}->{$id}) {
             print STDERR "WARNING: There were some results for a non-seed sequence: $id";
-#            push @seedIds, $cdhitInfo->{members}->{$id};
         }
-
-#        for (my $i = 0; $i <= $#$mgList; $i++) {
-#            my $mgId = $mgList->[$i];
-#            my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
-#            my $val = $abd->{proteins}->{$id}->{$mgId};
-#            $hasVal = $hasVal ? $val > 0 : 0;
-#            if ($hasVal) {
-#                my $mgName = $mgId;
-#                $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
-#                $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
-#                push @mg, $mgName;
-#                push @vals, $abd->{proteins}->{$id}->{$mgId};
-#            }
-#        }
+        
+        # This code is retained in case we want to add quantify results to the SSN in the future.
+        #for (my $i = 0; $i <= $#$mgList; $i++) {
+        #    my $mgId = $mgList->[$i];
+        #    my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
+        #    my $val = $abd->{proteins}->{$id}->{$mgId};
+        #    $hasVal = $hasVal ? $val > 0 : 0;
+        #    if ($hasVal) {
+        #        my $mgName = $mgId;
+        #        $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
+        #        $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
+        #        push @mg, $mgName;
+        #        push @vals, $abd->{proteins}->{$id}->{$mgId};
+        #    }
+        #}
     }
 
     if (scalar @mgMarker) {
-        writeGnnField($writer, "Markers with Metagenome Hits", "string", "true");
         writeGnnListField($writer, "Metagenomes Identified by Markers", "string", \@mgMarker);
-        writeGnnListField($writer, "Normalized Protein Abundances for Metagenome Hits Identified by Markers", "string", \@mgMarkerVals);
-    } else {
-        writeGnnField($writer, "Markers with Metagenome Hits", "string", "false");
     }
 
-
-
-    
-#    my $hasHit = scalar @vals;
-#    my $hasHitStr = $hasHit ? "true" : "false";
-#    if ($hasHit) {
-#        writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
-#        writeGnnListField($writer, "IDs with Non-zero Marker Count", "string", \@markerIds);
-#        writeGnnListField($writer, "Metagenomes with Marker Presence", "string", \@mg);
-#    } else {
-#        writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
-#    }
-#    if (scalar @seedIds) { #exists $cdhitInfo->{members}->{$origId}) {
-##        my $seedId = $cdhitInfo->{members}->{$origId};
-#        writeGnnField($writer, "Seed Sequence has Non-zero Marker Count", "string", $hasHitStr);
-#        writeGnnListField($writer, "Seed Sequences with Non-zero Marker Count", "string", \@seedIds);
-#        foreach my $seedId (@seedIds) {
-#            my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seedId);
-#            push @mg, @$mgLocal;
-#            push @vals, @$valsLocal;
-#            $hasHit = scalar @vals;
-#            $hasHitStr = $hasHit ? "true" : "false";
-##        writeGnnField($writer, "Seed Sequence", "string", $seedId);
-#        }
-##        if (exists $abd->{proteins}->{$seedId}) {
-#        writeGnnListField($writer, "Metagenomes with Seed Sequence Marker Presence", "string", \@mg);
-##        }
-#    }
+    # This code is retained in case we want to add quantify results to the SSN in the future.
+    #my $hasHit = scalar @vals;
+    #my $hasHitStr = $hasHit ? "true" : "false";
+    #if ($hasHit) {
+    #    writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
+    #    writeGnnListField($writer, "IDs with Non-zero Marker Count", "string", \@markerIds);
+    #    writeGnnListField($writer, "Metagenomes with Marker Presence", "string", \@mg);
+    #} else {
+    #    writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
+    #}
+    #if (scalar @seedIds) { #exists $cdhitInfo->{members}->{$origId}) {
+    #    writeGnnField($writer, "Seed Sequence has Non-zero Marker Count", "string", $hasHitStr);
+    #    writeGnnListField($writer, "Seed Sequences with Non-zero Marker Count", "string", \@seedIds);
+    #    foreach my $seedId (@seedIds) {
+    #        my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seedId);
+    #        push @mg, @$mgLocal;
+    #        push @vals, @$valsLocal;
+    #        $hasHit = scalar @vals;
+    #        $hasHitStr = $hasHit ? "true" : "false";
+    #    }
+    #}
 }
 
 
@@ -357,22 +346,20 @@ sub writeMarkerResults {
     my @xids = @_;
 
     my (@markerTypeNames, @markerIsTrue, @markerCount, @markerIds, @markerClusters, @markerSingles,
-        @contribsToMarker, @seedsInNode, @seedsOfNode, @idsWithMarkers);
+        @contribsToMarker, %seedsInNode, %seedsOfNode, @idsWithMarkers);
     foreach my $id (@xids) {
         # $cdhitInfo contains the mapping of IDs of members of cd-hit clusters to cd-hit seed sequence
         #   (this is not a seed seq)     (seed seq has marker data)
         if (exists $cdhitInfo->{members}->{$id}) {
             my $seedId = $cdhitInfo->{members}->{$id};
-            #if (exists $markerData->{$seedId}) {
-                push @contribsToMarker, $seedId;
-            #}
+            push @contribsToMarker, $seedId;
         }
-        if (exists $cdhitInfo->{seedsOfNode}->{$id}) {
-            push @seedsInNode, $id;
+        if (exists $cdhitInfo->{seeds}->{$id}) {
+            $seedsInNode{$id} = 1;
         }
         if (exists $cdhitInfo->{members}->{$id}) {
             my $seedId = $cdhitInfo->{members}->{$id};
-            push @seedsOfNode, $seedId; #"$id =seed $seedId";
+            $seedsOfNode{$seedId} = 1; #"$id =seed $seedId";
         }
 
         next if not exists $markerData->{$id};
@@ -382,7 +369,7 @@ sub writeMarkerResults {
         my $markerType = $markerData->{$id}->{type};
         my $markerTypeName = $markerType eq "TM" ? "True" : $markerType eq "JM" ? "Junction" : $markerType eq "QM" ? "Quasi" : "";
         my $isTrue = $markerType eq "TM";
-        my $mCount = $isTrue ? $markerData->{$id}->{count} : 0;
+        my $mCount = $markerData->{$id}->{count};
         push @markerTypeNames, $markerTypeName;
         push @markerIsTrue, $isTrue;
         push @markerCount, $mCount;
@@ -396,31 +383,19 @@ sub writeMarkerResults {
         }
     }
 
+    my @seedsInNode = keys %seedsInNode;
     if (scalar @seedsInNode) {
-        writeGnnField($writer, "Contains Seed Sequence(s)", "string", "true"); 
         writeGnnListField($writer, "Seed Sequence(s)", "string", \@seedsInNode);
-    } else {
-        writeGnnField($writer, "Contains Seed Sequence(s)", "string", "false"); 
     }
 
+    my @seedsOfNode = keys %seedsOfNode;
     if (scalar @seedsOfNode) {
-        writeGnnField($writer, "Contributes to Seed Sequence(s)", "string", "true");
-        writeGnnListField($writer, "Sequences Contributing Seed Sequence(s)", "string", \@seedsOfNode);
-    } else {
-        writeGnnField($writer, "Contributes to Seed Sequence(s)", "string", "false");
+        writeGnnListField($writer, "Seed Sequence Cluster(s)", "string", \@seedsOfNode);
     }
 
-    #TODO:
-    # SEED SEQUENCE CLUSTER COLOR????
-
-    my $markerField = "Contains Seed Sequences With Markers";
     if (scalar @idsWithMarkers) {
-        writeGnnField($writer, $markerField, "string", "true");
-        writeGnnListField($writer, "Seed Sequences with Markers", "string", \@markerIds);
         writeGnnListField($writer, "Marker Types", "string", \@markerTypeNames);
-        writeGnnListField($writer, "Number of True Markers", "integer", \@markerCount);
-    } else {
-        writeGnnField($writer, $markerField, "string", "false");
+        writeGnnListField($writer, "Number of Markers", "integer", \@markerCount);
     }
 }
 

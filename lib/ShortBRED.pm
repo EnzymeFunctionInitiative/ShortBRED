@@ -59,7 +59,7 @@ sub getAbundanceData {
 
         my $header = <PROT>;
         chomp($header);
-        my ($hdrClusterNum, @mg) = split(m/\t/, $header);
+        my ($hdrClusterNum, $protId, @mg) = split(m/\t/, $header);
         push(@{$abd->{metagenomes}}, @mg);
 
         while (<PROT>) {
@@ -133,12 +133,12 @@ sub expandMetanodeIds {
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         if ($efiAnnoUtil->is_expandable_attr($attrName)) {
-            print "Expanding $attrName\n";
+            #print "Expanding $attrName\n";
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
                 #make sure all accessions within the node are included in the gnn network
                 my $attrAcc = $accessionlist->getAttribute('value');
-                print "         Expanded $nodeId into $attrAcc\n";
+                #print "         Expanded $nodeId into $attrAcc\n";
                 push @nodes, $attrAcc if $nodeId ne $attrAcc;
             }
         }

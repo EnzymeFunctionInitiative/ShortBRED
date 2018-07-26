@@ -157,14 +157,50 @@ foreach my $mgId (@metagenomeIds) {
 #
 # Don't run this if we are creating SSNs from another job's results.
 my $B = $S->getBuilder();
+my $useTasks = 1;
 if (not $parentQuantifyId) {
     $submitName = "sb_quantify";
-    $B->resource(1, $np, "300gb");
     $B->addAction("module load $sbModule");
-    foreach my $mgId (@metagenomeIds) {
-        my $mgFile = $mgFiles{$mgId};
-        my $resFile = $resFiles{$mgId};
-        $B->addAction("python $sbQuantifyApp --threads $np --markers $sbMarkerFile --wgs $mgFile --results $resFile --tmp $sbOutputDir-$mgId");
+    if (not $useTasks) {
+        $B->resource(1, $np, "300gb");
+        foreach my $mgId (@metagenomeIds) {
+            my $mgFile = $mgFiles{$mgId};
+            my $resFile = $resFiles{$mgId};
+            $B->addAction("python $sbQuantifyApp --threads $np --markers $sbMarkerFile --wgs $mgFile --results $resFile --tmp $sbOutputDir-$mgId");
+        }
+    } else {
+        my $numMg = scalar @metagenomeIds;
+        my $numFiles = $numMg < 24 ? 1 : int($numMg / 24 + 1);
+        my $maxTask = $numMg >= 24 ? 24 : $numMg;
+        if ($maxTask == 24) {
+            my $excessTask = int(($numFiles * 24 - $numMg) / $numFiles);
+            $maxTask = $maxTask - $excessTask;
+        }
+
+        my $tmpMarker = "$outputDir/markers.faa.{JOB_ARRAYID}";
+
+        $B->jobArray("1-$maxTask");
+        $B->resource(1, 1, "13gb");
+        my $c = 0;
+        foreach my $mgId (@metagenomeIds) {
+            my $mgFile = $mgFiles{$mgId};
+            my $resFile = $resFiles{$mgId};
+            if ($c % $numFiles == 0) {
+                my $aid = int($c / $numFiles) + 1;
+                if ($c > 0) {
+                    $B->addAction("    rm $tmpMarker");
+                    $B->addAction("fi");
+                }
+                $B->addAction("if [ {JOB_ARRAYID} == $aid ]; then");
+                $B->addAction("    cp $sbMarkerFile $tmpMarker"); # Copy to possibly help performance out.
+            }
+            $B->addAction("    python $sbQuantifyApp --markers $tmpMarker --wgs $mgFile --results $resFile --tmp $sbOutputDir-$mgId");
+            $c++;
+        }
+        if ($c > 1) {
+            $B->addAction("    rm $tmpMarker");
+            $B->addAction("fi");
+        }
     }
     $depId = doSubmit($depId);
 }
