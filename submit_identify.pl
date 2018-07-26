@@ -135,7 +135,7 @@ $B->setScriptAbortOnError(0); # grep causes the script to abort if we have set -
 $B->resource(1, 1, "70gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
-$B->addAction("HASCLUSTERNUM=`head -2000 $inputSsn | grep -m1 \"Cluster Number\"`");
+$B->addAction("HASCLUSTERNUM=`head -2000 $inputSsn | grep -m1 -e \"Cluster Number\" -e \"Singleton Number\"`");
 $B->addAction("if [[ \$HASCLUSTERNUM == \"\" ]]; then");
 $B->addAction("    echo \"ERROR: Cluster Number is not present in SSN\"");
 $B->addAction("    touch $ssnErrorDir/ssn_cl_num.failed");
