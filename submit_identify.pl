@@ -92,6 +92,7 @@ my $sbIdentifyApp = $ENV{SHORTBRED_IDENTIFY};
 my $efiSbDir = $ENV{EFI_SHORTBRED_HOME};
 my $ssnAccessionFile = "$outputDir/accession";
 my $ssnClusterFile = "$outputDir/cluster";
+my $ssnSequenceFile = "$outputDir/ssn-sequences.fa";
 my $fastaFile = "$outputDir/sequences.fa";
 my $sbOutputDir = "$outputDir/id-temp";
 my $sbMarkerFile = "$outputDir/markers.faa";
@@ -141,7 +142,7 @@ $B->addAction("    echo \"ERROR: Cluster Number is not present in SSN\"");
 $B->addAction("    touch $ssnErrorDir/ssn_cl_num.failed");
 $B->addAction("    exit 1");
 $B->addAction("fi");
-$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile");
+$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile -sequence-file $ssnSequenceFile");
 # Add this check because we disable set -e above for grep.
 $B->addAction("if [ $? != 0 ]; then");
 $B->addAction("    echo \"ERROR: in get_clusters.pl\"");
@@ -169,6 +170,10 @@ if (not $parentJobId) {
     $B->addAction("module load $dbModule");
     $B->addAction("sort $ssnAccessionFile > $sortedAcc");
     $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $blastDbPath");
+    $B->addAction("SZ=`stat -c%s $ssnSequenceFile`");
+    $B->addAction("if [[ \$SZ != 0 ]]; then");
+    $B->addAction("    cat $ssnSequenceFile >> $fastaFile");
+    $B->addAction("fi");
     $B->addAction("cd-hit -c $seqIdCutoff -s $lenDiffCutoff -i $fastaFile -o $tempFasta -M 14900");
     $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $sortedAcc -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $tempFasta.clstr");
     $B->addAction("mv $fastaFile $fastaFile.full");

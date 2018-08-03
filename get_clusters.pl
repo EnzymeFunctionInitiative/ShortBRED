@@ -17,13 +17,14 @@ use Data::Dumper;
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandMetanodeIds getClusterNumber);
 
-my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering );
+my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile);
 
 my $result = GetOptions(
     "ssn=s"             => \$ssn,
     "accession-file=s"  => \$accFile,
     "cluster-file=s"    => \$clusterFile,
     "default-numbering" => \$useDefaultClusterNumbering,
+    "sequence-file=s"   => \$seqFile,
 );
 
 
@@ -34,6 +35,7 @@ die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $ac
 
 $useDefaultClusterNumbering = 0 if not defined $useDefaultClusterNumbering;
 $useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
+$seqFile = "" if not defined $seqFile;
 
 
 my $efiAnnoUtil = new EFI::Annotations;
@@ -41,7 +43,7 @@ my $efiAnnoUtil = new EFI::Annotations;
 my $reader = XML::LibXML::Reader->new(location => $ssn);
 
 #my ($name, $nodes, $edges, $degrees) = getNodesAndEdges($reader);
-my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdges($reader);
+my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdgesAndSequences($reader, $seqFile);
 my ($clusters, $constellations) = getClusters($network, $nodeIds);
 
 
@@ -120,8 +122,14 @@ close CLUSTER;
 
 
 
-sub getNodesAndEdges{
-    my $reader = shift @_;
+# Gets the node and edge objects, as well as writes any sequences in the XGMML to the sequence file.
+sub getNodesAndEdgesAndSequences {
+    my $reader = shift;
+    my $seqFile = shift;
+
+    if ($seqFile) {
+        open SEQ, ">$seqFile";
+    }
 
     my @nodes;
     my @edges;
@@ -149,6 +157,7 @@ sub getNodesAndEdges{
         if ($clusterNum) {
             map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
         }
+        saveSequence(\*SEQ, $nodeId, $xmlNode) if $seqFile;
         push @nodeIds, @expandedIds;
     }
 
@@ -163,12 +172,10 @@ sub getNodesAndEdges{
             push @nodeIds, $nodeId;
             my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
             my $clusterNum = getClusterNumber($nodeId, $xmlNode);
-            if ($nodeId eq "A0A101VZA3") {
-                print "CLUSTER: $clusterNum\n";
-            }
             if ($clusterNum) {
                 map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
             }
+            saveSequence(\*SEQ, $nodeId, $xmlNode) if $seqFile;
             push @nodeIds, @expandedIds;
         } elsif($reader->name() eq "edge") {
             push @edges, $xmlNode;
@@ -189,8 +196,58 @@ sub getNodesAndEdges{
             push @network, {source => $source, target => $target};
         }
     }
+
+    if ($seqFile) {
+        close SEQ;
+    }
     
     return \@network, \@nodeIds, $clusterNumbers;
+}
+
+
+sub saveSequence {
+    my $fh = shift;
+    my $nodeId = shift;
+    my $xmlNode = shift;
+
+
+    my @seqs;
+    my @ids;
+
+    my @annotations = $xmlNode->findnodes('./*');
+    foreach my $annotation (@annotations) {
+        my $attrName = $annotation->getAttribute('name');
+        my $attrType = $annotation->getType();
+        if ($attrName eq EFI::Annotations::FIELD_ID_ACC) {
+            my @accessionlists = $annotation->findnodes('./*');
+            foreach my $accessionlist (@accessionlists) {
+                my $attrAcc = $accessionlist->getAttribute('value');
+                push @ids, $attrAcc;
+            }
+        }
+        if ($attrName eq EFI::Annotations::FIELD_SEQ_KEY) {
+            if ($attrType eq "list") {
+                my @seqAttrList = $annotation->findnodes('./*');
+                foreach my $seqAttr (@seqAttrList) {
+                    my $seq = $seqAttr->getAttribute('value');
+                    push @seqs, $seq;
+                }
+            } else {
+                my $seq = $annotation->getAttribute('value');
+                push @seqs, $seq;
+            }
+        }
+    }
+
+    if (not scalar @ids) {
+        push @ids, $nodeId;
+    }
+
+    for (my $i = 0; $i <= $#ids; $i++) {
+        if ($seqs[$i]) {
+            $fh->print(">" . $ids[$i] . "\n" . $seqs[$i] . "\n\n");
+        }
+    }
 }
 
 
