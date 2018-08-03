@@ -163,7 +163,7 @@ sub getClusterNumber {
         if ($attrName eq "Cluster Number") {
             $val = $annotation->getAttribute('value');
         } elsif ($attrName eq "Singleton Number") {
-            $val = $annotation->getAttribute('value');
+            $val = "S" . $annotation->getAttribute('value');
         }
     }
 

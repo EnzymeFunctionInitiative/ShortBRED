@@ -153,7 +153,11 @@ def read_dict( fh, kdex=0, vdex=1, multivalue=False,
 
 def strat_sort( k ):
     key = k.split( c_delim )
-    key[0] = 0 if key[0] == c_na else int( key[0] )
+    if key[0] == c_na:
+        key[0] = 0
+    elif "S" not in key[0]:
+        key[0] = int( key[0] )
+    #key[0] = 0 if key[0] == c_na else int( key[0] )
     return key
 
 def write_nested_dict( dd, path, missing=0 ):
