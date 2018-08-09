@@ -25,6 +25,7 @@ my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $ssnName, $inputSsn, $p
 my ($proteinFileNameNormalized, $clusterFileNameNormalized);
 my ($proteinFileNameGenomeNormalized, $clusterFileNameGenomeNormalized);
 my ($parentIdentifyId, $parentQuantifyId);
+my ($mergeAllRuns);
 
 
 my $result = GetOptions(
@@ -45,6 +46,7 @@ my $result = GetOptions(
     "parent-identify-id=i"      => \$parentIdentifyId,,
     "parent-quantify-id=i"      => \$parentQuantifyId,
 
+    "global-merge"              => \$mergeAllRuns,
     "job-id=i"                  => \$jobId,
     "np=i"                      => \$np,
     "queue=s"                   => \$queue,
@@ -91,6 +93,7 @@ $clusterFileName = "cluster_abundance.txt"      if not defined $clusterFileName 
 $proteinFileName = "protein_abundnace.txt"      if not defined $proteinFileName or not $proteinFileName;
 $parentQuantifyId = 0                           if not defined $parentQuantifyId;
 $parentIdentifyId = 0                           if not defined $parentIdentifyId;
+$mergeAllRuns = 0                               if not defined $mergeAllRuns;
 
 my ($inputDir, $parentInputDir, $outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentIdentifyId, $parentQuantifyId);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
@@ -112,19 +115,21 @@ my $ssnClusterFile = "$inputDir/cluster";
 my $sbOutputDir = "$outputDir/quantify-temp";
 my $sbMarkerFile = $parentIdentifyId ? "$parentInputDir/markers.faa" : "$inputDir/markers.faa";
 my $cdhitFile = "$inputDir/cdhit.txt";
+
+my $targetDir = $mergeAllRuns ? $inputDir : $outputDir; # If we merge all runs, the target dir is the input dir
 my $clusterResult = "$outputDir/$clusterFileName";
 my $proteinResult = "$outputDir/$proteinFileName";
 my $clusterResultNormalized = "$outputDir/$clusterFileNameNormalized";
 my $proteinResultNormalized = "$outputDir/$proteinFileNameNormalized";
 my $clusterResultGenomeNormalized = "$outputDir/$clusterFileNameGenomeNormalized";
 my $proteinResultGenomeNormalized = "$outputDir/$proteinFileNameGenomeNormalized";
-my $clusterMerged = "$inputDir/$clusterFileName";
-my $proteinMerged = "$inputDir/$proteinFileName";
-my $clusterMergedNormalized = "$inputDir/$clusterFileNameNormalized";
-my $proteinMergedNormalized = "$inputDir/$proteinFileNameNormalized";
-my $clusterMergedGenomeNormalized = "$inputDir/$clusterFileNameGenomeNormalized";
-my $proteinMergedGenomeNormalized = "$inputDir/$proteinFileNameGenomeNormalized";
-my $outputSsn = "$inputDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
+my $clusterMerged = "$targetDir/$clusterFileName";
+my $proteinMerged = "$targetDir/$proteinFileName";
+my $clusterMergedNormalized = "$targetDir/$clusterFileNameNormalized";
+my $proteinMergedNormalized = "$targetDir/$proteinFileNameNormalized";
+my $clusterMergedGenomeNormalized = "$targetDir/$clusterFileNameGenomeNormalized";
+my $proteinMergedGenomeNormalized = "$targetDir/$proteinFileNameGenomeNormalized";
+my $outputSsn = "$targetDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
 my $submitFile = "";
@@ -224,10 +229,7 @@ $depId = doSubmit($depId);
 
 #######################################################################################################################
 # Build the XGMML file with the marker attributes and the abundances added added
-
 my $lockFile = "$inputDir/merge.lock";
-my $mergeInputDir = $parentIdentifyId ? $parentInputDir : $inputDir;
-my $mergeArgsShared = "-cluster-list-file $ssnClusterFile -input-dir $inputDir -quantify-dir-pat quantify- -force-include $qResDirName";
 
 $B = $S->getBuilder();
 $B->setScriptAbortOnError(0); # Disable abort on error, so that we can disable the merged output lock.
@@ -237,29 +239,34 @@ $B->resource(1, 1, "200gb");
 $B->addAction("MGIDS=\"$metagenomeIdList\"");
 $B->addAction("MGDB=\"$dbFiles\"");
 $B->addAction("module load $sbModule");
-$B->addAction("$efiSbDir/lock_merged_output.pl $lockFile lock");
-$B->addAction("OUT=\$?");
-$B->addAction("if [ \$OUT -ne 0 ]; then");
-$B->addAction("    echo \"unable to lock output\"");
-$B->addAction("    echo \$OUT > $outputDir/ssn.failed");
-$B->addAction("    rm -f $lockFile");
-$B->addAction("    exit 620");
-$B->addAction("fi");
-$B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMerged -merged-cluster $clusterMerged -protein-name $proteinFileName -cluster-name $clusterFileName");
-$B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMergedNormalized -merged-cluster $clusterMergedNormalized -protein-name $proteinFileNameNormalized -cluster-name $clusterFileNameNormalized");
-if ($agsFilePath) {
-    $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMergedGenomeNormalized -merged-cluster $clusterMergedGenomeNormalized -protein-name $proteinFileNameGenomeNormalized -cluster-name $clusterFileNameGenomeNormalized");
+
+if ($mergeAllRuns) {
+    $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile lock");
+    $B->addAction("OUT=\$?");
+    $B->addAction("if [ \$OUT -ne 0 ]; then");
+    $B->addAction("    echo \"unable to lock output\"");
+    $B->addAction("    echo \$OUT > $outputDir/ssn.failed");
+    $B->addAction("    rm -f $lockFile");
+    $B->addAction("    exit 620");
+    $B->addAction("fi");
+
+    my $mergeArgsShared = "-cluster-list-file $ssnClusterFile -input-dir $inputDir -quantify-dir-pat quantify- -force-include $qResDirName";
+    $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMerged -merged-cluster $clusterMerged -protein-name $proteinFileName -cluster-name $clusterFileName");
+    $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMergedNormalized -merged-cluster $clusterMergedNormalized -protein-name $proteinFileNameNormalized -cluster-name $clusterFileNameNormalized");
+    if ($agsFilePath) {
+        $B->addAction("$efiSbDir/merge_data.pl $mergeArgsShared -merged-protein $proteinMergedGenomeNormalized -merged-cluster $clusterMergedGenomeNormalized -protein-name $proteinFileNameGenomeNormalized -cluster-name $clusterFileNameGenomeNormalized");
+    }
 }
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $outputSsn -protein-file $proteinMergedGenomeNormalized -cluster-file $clusterMergedGenomeNormalized -cdhit-file $cdhitFile -quantify -metagenome-db \$MGDB -metagenome-ids \$MGIDS");
 $B->addAction("OUT=\$?");
 $B->addAction("if [ \$OUT -ne 0 ]; then");
 $B->addAction("    echo \"make SSN failed.\"");
 $B->addAction("    echo \$OUT > $outputDir/ssn.failed");
-$B->addAction("    rm -f $lockFile");
+$B->addAction("    rm -f $lockFile")                                        if $mergeAllRuns;
 $B->addAction("    exit 621");
 $B->addAction("fi");
 $B->addAction("zip -j $outputSsn.zip $outputSsn");
-$B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock");
+$B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock")           if $mergeAllRuns;
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 
