@@ -8,7 +8,7 @@ use FindBin;
 use Scalar::Util qw(looks_like_number);
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(getAbundanceData);
+use ShortBRED qw(getAbundanceData getClusterSize);
 
 
 my ($proteinMerged, $clusterMerged, $proteinName, $clusterName, $inputDir, $qDirPattern, $qDirInclude, $clusterListFile);
@@ -165,26 +165,6 @@ sub numericSortFn {
     } else {
         return -1;
     }
-}
-
-
-sub getClusterSizes {
-    my $file = shift;
-
-    my $data = {};
-
-    open FILE, $file or die "Unable to open cluster size file $file: $!";
-
-    while (<FILE>) {
-        chomp;
-        my ($cluster, $id) = split(m/\t/);
-        $data->{$cluster} = 0 if not exists $data->{$cluster};
-        $data->{$cluster}++;
-    }
-
-    close FILE;
-
-    return $data;
 }
 
 

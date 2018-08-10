@@ -6,7 +6,7 @@ use Exporter;
 
 @ISA         = qw(Exporter);
 @EXPORT      = ();
-@EXPORT_OK   = qw(getAbundanceData expandMetanodeIds getClusterMap getMetagenomeInfo getClusterNumber expandMetanodeIdAttribute);
+@EXPORT_OK   = qw(getAbundanceData expandMetanodeIds getClusterMap getMetagenomeInfo getClusterNumber expandMetanodeIdAttribute getClusterSizes);
 
 #our ($IdentifyScript, $QuantifyScript, $ParseSSNScript);
 #
@@ -190,6 +190,26 @@ sub getMetagenomeInfo {
         }
         close DB;
     }
+
+    return $data;
+}
+
+
+sub getClusterSizes {
+    my $file = shift;
+
+    my $data = {};
+
+    open FILE, $file or die "Unable to open cluster size file $file: $!";
+
+    while (<FILE>) {
+        chomp;
+        my ($cluster, $id) = split(m/\t/);
+        $data->{$cluster} = 0 if not exists $data->{$cluster};
+        $data->{$cluster}++;
+    }
+
+    close FILE;
 
     return $data;
 }
