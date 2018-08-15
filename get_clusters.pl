@@ -17,7 +17,7 @@ use Data::Dumper;
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandMetanodeIds getClusterNumber);
 
-my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile);
+my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile, $minSeqLen);
 
 my $result = GetOptions(
     "ssn=s"             => \$ssn,
@@ -25,6 +25,7 @@ my $result = GetOptions(
     "cluster-file=s"    => \$clusterFile,
     "default-numbering" => \$useDefaultClusterNumbering,
     "sequence-file=s"   => \$seqFile,
+    "min-seq-len=i"     => \$minSeqLen,
 );
 
 
@@ -36,6 +37,7 @@ die $usage if not defined $ssn or not -f $ssn or not defined $accFile or not $ac
 $useDefaultClusterNumbering = 0 if not defined $useDefaultClusterNumbering;
 $useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
 $seqFile = "" if not defined $seqFile;
+$minSeqLen = 0 if not defined $minSeqLen;
 
 
 my $efiAnnoUtil = new EFI::Annotations;
@@ -234,6 +236,7 @@ sub saveSequence {
                 }
             } else {
                 my $seq = $annotation->getAttribute('value');
+                $seq =~ s/\s//gs;
                 push @seqs, $seq;
             }
         }
@@ -244,7 +247,7 @@ sub saveSequence {
     }
 
     for (my $i = 0; $i <= $#ids; $i++) {
-        if ($seqs[$i]) {
+        if ($seqs[$i] and length $seqs[$i] >= $minSeqLen) {
             $fh->print(">" . $ids[$i] . "\n" . $seqs[$i] . "\n\n");
         }
     }

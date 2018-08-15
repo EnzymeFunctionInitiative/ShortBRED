@@ -9,11 +9,12 @@ use Capture::Tiny qw(:all);
 use Getopt::Long;
 use File::Which qw(which);
 
-my ($result, $idFile, $outputFile, $blastDbPath);
+my ($result, $idFile, $outputFile, $blastDbPath, $minSeqLen);
 $result = GetOptions(
     "id-file=s"     => \$idFile,
     "output=s"      => \$outputFile,
     "blast-db=s"    => \$blastDbPath,
+    "min-seq-len=i" => \$minSeqLen,
 );
 
 my $usage = "$0 -id-file=path_to_file_containing_ids -output=output_fasta_file";
@@ -26,6 +27,7 @@ my $isBlast1 = which("fastacmd");
 my $fastaCmd = $isBlast1 ? "fastacmd" : "blastdbcmd";
 my $dbFlag = $isBlast1 ? "-d" : "-db";
 my $entryFlag = $isBlast1 ? "-s" : "-entry";
+$minSeqLen = 0 if not defined $minSeqLen;
 
 
 my @ids = get_ids($idFile);
@@ -43,7 +45,10 @@ while (scalar @ids) {
     foreach my $seq (@sequences) {
         if (($isBlast1 and $seq =~ s/^\w\w\|(\w{6,10})\|.*//) or (not $isBlast1 and $seq =~ s/^(\w{6,10})\s.*//)) {
             my $accession = $1;
-            print OUTPUT ">$accession$seq\n\n";
+            (my $seqCopy = $seq) =~ s/\s//gs;
+            if (length $seqCopy >= $minSeqLen) {
+                print OUTPUT ">$accession$seq\n\n";
+            }
         }
     }
 }

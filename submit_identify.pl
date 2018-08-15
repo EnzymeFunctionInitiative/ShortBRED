@@ -23,6 +23,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPA
 
 my ($inputSsn, $outputDirName);
 my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
+my ($minSeqLen);
 
 
 my $result = GetOptions(
@@ -33,6 +34,7 @@ my $result = GetOptions(
     "cdhit-out-name=s"  => \$cdhitFileName,
 
     "parent-job-id=i"   => \$parentJobId,
+    "min-seq-len=i"     => \$minSeqLen,
 
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
@@ -66,6 +68,7 @@ $np = 24 if not defined $np or not $np;
 $scheduler = "slurm" if not defined $scheduler or not $scheduler;
 $dryRun = 0 if not defined $dryRun;
 $parentJobId = 0 if not defined $parentJobId;
+$minSeqLen = 0 if not defined $minSeqLen;
 
 my ($outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentJobId);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
@@ -130,6 +133,7 @@ if ($inputSsn =~ m/\.zip/i) {
 
 #######################################################################################################################
 # Get the clusters and accessions
+my $minSeqLenArg = $minSeqLen ? "-min-seq-len $minSeqLen" : "";
 
 $B = $S->getBuilder();
 $submitName = "sb_get_clusters";
@@ -143,7 +147,7 @@ $B->addAction("    echo \"ERROR: Cluster Number is not present in SSN\"");
 $B->addAction("    touch $ssnErrorDir/ssn_cl_num.failed");
 $B->addAction("    exit 1");
 $B->addAction("fi");
-$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile -sequence-file $ssnSequenceFile");
+$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile -sequence-file $ssnSequenceFile $minSeqLenArg");
 # Add this check because we disable set -e above for grep.
 $B->addAction("if [ $? != 0 ]; then");
 $B->addAction("    echo \"ERROR: in get_clusters.pl\"");
@@ -170,7 +174,7 @@ if (not $parentJobId) {
     $B->addAction("module load $sbModule");
     $B->addAction("module load $dbModule");
     $B->addAction("sort $ssnAccessionFile > $sortedAcc");
-    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $blastDbPath");
+    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $blastDbPath $minSeqLenArg");
     $B->addAction("SZ=`stat -c%s $ssnSequenceFile`");
     $B->addAction("if [[ \$SZ != 0 ]]; then");
     $B->addAction("    cat $ssnSequenceFile >> $fastaFile");
