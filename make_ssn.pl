@@ -21,6 +21,7 @@ use EFI::CdHitParser;
 
 
 my ($ssnIn, $ssnOut, $markerFile, $proteinFile, $clusterFile, $clusterMapFile, $isQuantify, $dbFiles, $metagenomeIdList, $cdhitFile);
+my ($isMergedResults);
 my $result = GetOptions(
     "ssn-in=s"              => \$ssnIn,
     "ssn-out=s"             => \$ssnOut,
@@ -29,6 +30,7 @@ my $result = GetOptions(
     "cluster-file=s"        => \$clusterFile,
     "cluster-map=s"         => \$clusterMapFile,
     "merge-ssn|quantify"    => \$isQuantify,
+    "merged-results"        => \$isMergedResults,
     "metagenome-db=s"       => \$dbFiles,
     "metagenome-ids=s"      => \$metagenomeIdList,
     "cdhit-file=s"          => \$cdhitFile,
@@ -45,6 +47,7 @@ die $usage if not defined $isQuantify and (not defined $markerFile or not -f $ma
 die $usage if defined $isQuantify and (not defined $proteinFile or not -f $proteinFile or not defined $clusterFile or not -f $clusterFile);
 
 $isQuantify = 0 if not defined $isQuantify;
+$isMergedResults = 0 if not defined $isMergedResults;
 
 my $efiAnnoUtil = new EFI::Annotations;
 
@@ -70,7 +73,7 @@ if (not $isQuantify) {
     $markerData = getMarkerData($markerFile);
     $clusterMap = getClusterMap($clusterMapFile);
 } else {
-    $abData = getAbundanceData($proteinFile, $clusterFile, 0, 1); # cleanIds = no, use merged data (cluster num in separate column) = yes
+    $abData = getAbundanceData($proteinFile, $clusterFile, 1, $isMergedResults); # cleanIds = yes, don't use merged data (cluster num in separate column) = yes
 }
 
 my $reader = XML::LibXML::Reader->new(location => $ssnIn);

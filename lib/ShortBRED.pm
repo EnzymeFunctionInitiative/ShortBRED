@@ -59,7 +59,13 @@ sub getAbundanceData {
 
         my $header = <PROT>;
         chomp($header);
-        my ($hdrClusterNum, $protId, @mg) = split(m/\t/, $header);
+        my @headerParts = split(m/\t/, $header);
+        my ($hdrClusterNum, $protId, @mg);
+        if ($isMerged) { 
+            ($hdrClusterNum, $protId, @mg) = @headerParts;
+        } else {
+            ($protId, @mg) = @headerParts;
+        }
         push(@{$abd->{metagenomes}}, @mg);
 
         while (<PROT>) {
