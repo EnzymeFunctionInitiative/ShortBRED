@@ -4,8 +4,8 @@ use strict;
 use warnings;
 
 BEGIN {
-    die "Please load efishared before runing this script" if not $ENV{EFISHARED};
-    use lib $ENV{EFISHARED};
+    die "Please load efishared before runing this script" if not $ENV{EFI_SHARED};
+    use lib $ENV{EFI_SHARED};
 }
 
 use Getopt::Long;
@@ -18,12 +18,12 @@ use lib $FindBin::Bin . "/lib";
 use ShortBRED;
 
 
-die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPATH};
+die "Load efidb module in order to run this program." if not exists $ENV{EFI_DB_DIR};
 
 
 my ($inputSsn, $outputDirName);
 my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
-my ($minSeqLen);
+my ($minSeqLen, $searchType, $cdhitSid, $consThresh, $refDb);
 
 
 my $result = GetOptions(
@@ -33,9 +33,13 @@ my $result = GetOptions(
     "ssn-out-name=s"    => \$outputSsnName,
     "cdhit-out-name=s"  => \$cdhitFileName,
 
-    "parent-job-id=i"   => \$parentJobId,
     "min-seq-len=i"     => \$minSeqLen,
+    "search-type=s"     => \$searchType,
+    "cdhit-sid=i"       => \$cdhitSid,
+    "cons-thresh=i"     => \$consThresh,
+    "ref-db=s"          => \$refDb,
 
+    "parent-job-id=i"   => \$parentJobId,
     "job-id=i"          => \$jobId,
     "np=i"              => \$np,
     "queue=s"           => \$queue,
@@ -52,7 +56,19 @@ my $usage =
     -ssn-out-name   what to name the output xgmml file
     -cdhit-out-name what to name the output cdhit mapping table file
     -tmpdir         name of output directory (relative)
+    
+    -min-seq-len    minimum sequence length to use (to exclude fragments from UniRef90 SSNs)
+    -search-type    type of search to use (diamond or blast)
+    -cdhit-sid      Sequence identity to use for CD-HIT clustering proteins into families for consensus
+                    sequence determination
+    -cons-thresh    Consensus threshold for assigning AA's in the family alignments to the consensus
+                    sequences
+    -ref-db         Which type of reference database to use (uniprot = full UniProt, uniref50 =
+                    UniRef50, uniref90 = UniRef90)
+
     -job-id         number of the job [optional]
+    -parent-job-id  the ID of the parent job (for using previously-computed markers with a new SSN
+
     -np             number of CPUs to use [optional, defaults to 24]
     -queue          the name of the cluster queue to submit to
     -scheduler      the type of scheduler to use (torque or slurm) [optional, defaults to slurm]
@@ -63,12 +79,23 @@ die $usage if not defined $inputSsn or not -f $inputSsn or not defined $outputDi
               not defined $queue or not $queue or not defined $outputSsnName or not $outputSsnName;
 
 
-$memQueue = $queue if not defined $memQueue or not $memQueue;
-$np = 24 if not defined $np or not $np;
-$scheduler = "slurm" if not defined $scheduler or not $scheduler;
-$dryRun = 0 if not defined $dryRun;
-$parentJobId = 0 if not defined $parentJobId;
-$minSeqLen = 0 if not defined $minSeqLen;
+$memQueue       = $queue        if not defined $memQueue or not $memQueue;
+$np             = 24            if not defined $np or not $np;
+$scheduler      = "slurm"       if not defined $scheduler or not $scheduler;
+$dryRun         = 0             if not defined $dryRun;
+$parentJobId    = 0             if not defined $parentJobId;
+$minSeqLen      = 0             if not defined $minSeqLen;
+$cdhitSid       = ""            if not defined $cdhitSid;
+$consThresh     = ""            if not defined $consThresh;
+$refDb          = "uniprot"     if not defined $refDb or ($refDb ne "uniref90" and $refDb ne "uniref50");
+$searchType     = ""            if not defined $searchType or $searchType ne "diamond";
+
+if ($cdhitSid and $cdhitSid > 1) {
+    $cdhitSid = substr($cdhitSid / 100, 0, 4);
+}
+if ($consThresh and $consThresh > 1) {
+    $consThresh = substr($consThresh / 100, 0, 4);
+}
 
 my ($outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentJobId);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
@@ -85,12 +112,30 @@ my $usearchMod = getLmod("USEARCH/9", "USEARCH");
 my $muscleMod = getLmod("MUSCLE/3", "MUSCLE");
 my $blastMod = getLmod("BLAST+", "BLAST+");
 my $cdhitMod = getLmod("CD-HIT", "CD-HIT");
-my $blastDbPath = "$ENV{EFIDBPATH}/combined.fasta";
-my $dbSupport = "$ENV{EFIDBHOME}/support";
-my $dbModule = $ENV{EFIDBMOD};
+my $blastDbPath = $ENV{EFI_DB_DIR};
+my $dbSupport = "$ENV{EFI_DB_HOME}/support";
+my $dbModule = $ENV{EFI_DB_MOD};
 my $sbModule = $ENV{SHORTBRED_MOD};
 my $sbParseSsnApp = $ENV{SHORTBRED_PARSESSN};
 my $sbIdentifyApp = $ENV{SHORTBRED_IDENTIFY};
+
+if ($searchType eq "diamond") {
+    $blastDbPath = $ENV{EFI_DIAMOND_DB_DIR};
+}
+my $defaultDb = exists $ENV{EFI_UNIPROT_DB} ? $ENV{EFI_UNIPROT_DB} : "combined.fasta";
+if ($refDb ne "uniprot") {
+    if ($refDb eq "uniref50") {
+        $blastDbPath .= "/uniref50";
+    } elsif ($refDb eq "uniref90") {
+        $blastDbPath .= "/uniref90"
+    } else {
+        $blastDbPath .= "/$defaultDb";
+    }
+} else {
+    $blastDbPath .= "/$defaultDb";
+}
+
+my $sequenceDbPath = $ENV{EFI_DB_DIR} . "/" . $defaultDb;
 
 my $efiSbDir = $ENV{EFI_SHORTBRED_HOME};
 my $ssnAccessionFile = "$outputDir/accession";
@@ -174,7 +219,7 @@ if (not $parentJobId) {
     $B->addAction("module load $sbModule");
     $B->addAction("module load $dbModule");
     $B->addAction("sort $ssnAccessionFile > $sortedAcc");
-    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $blastDbPath $minSeqLenArg");
+    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $sequenceDbPath $minSeqLenArg");
     $B->addAction("SZ=`stat -c%s $ssnSequenceFile`");
     $B->addAction("if [[ \$SZ != 0 ]]; then");
     $B->addAction("    cat $ssnSequenceFile >> $fastaFile");
@@ -198,12 +243,17 @@ if (not $parentJobId) {
     
     #######################################################################################################################
     # Run ShortBRED-Identify
+
+    my $searchTypeArg = $searchType ? "--search_program $searchType" :
+                            ($ENV{SHORTBRED_MOD} =~ m/diamond/ ? "--search_program blast" : "");
+    my $cdhitSidArg = $cdhitSid ? "--clustid $cdhitSid" : "";
+    my $consThreshArg = $consThresh ? "--consthresh $consThresh" : "";
     
     $B = $S->getBuilder();
     $submitName = "sb_identify";
     $B->resource(1, $np, "300gb");
     $B->addAction("module load $sbModule");
-    $B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir");
+    $B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir $searchTypeArg $cdhitSidArg $consThreshArg");
     $depId = doSubmit($depId);
 }
 

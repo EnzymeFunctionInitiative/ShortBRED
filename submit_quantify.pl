@@ -26,6 +26,7 @@ my ($proteinFileNameNormalized, $clusterFileNameNormalized);
 my ($proteinFileNameGenomeNormalized, $clusterFileNameGenomeNormalized);
 my ($parentIdentifyId, $parentQuantifyId);
 my ($mergeAllRuns);
+my ($searchType);
 
 
 my $result = GetOptions(
@@ -46,6 +47,7 @@ my $result = GetOptions(
     "parent-identify-id=i"      => \$parentIdentifyId,,
     "parent-quantify-id=i"      => \$parentQuantifyId,
 
+    "search-type=s"             => \$searchType,
     "global-merge"              => \$mergeAllRuns,
     "job-id=i"                  => \$jobId,
     "np=i"                      => \$np,
@@ -94,6 +96,8 @@ $proteinFileName = "protein_abundnace.txt"      if not defined $proteinFileName 
 $parentQuantifyId = 0                           if not defined $parentQuantifyId;
 $parentIdentifyId = 0                           if not defined $parentIdentifyId;
 $mergeAllRuns = 0                               if not defined $mergeAllRuns;
+
+$searchType = (defined $searchType and $searchType eq "diamond") ? "diamond" : "usearch";
 
 my ($inputDir, $parentInputDir, $outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentIdentifyId, $parentQuantifyId);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
@@ -161,6 +165,9 @@ foreach my $mgId (@metagenomeIds) {
 # Run ShortBRED-Quantify on the markers
 #
 # Don't run this if we are creating SSNs from another job's results.
+
+my $searchTypeArgs = $searchType ? "--search_program $searchType" : "";
+    
 my $B = $S->getBuilder();
 my $useTasks = 1;
 if (not $parentQuantifyId) {
