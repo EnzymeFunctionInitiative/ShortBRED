@@ -23,7 +23,7 @@ die "Load efidb module in order to run this program." if not exists $ENV{EFI_DB_
 
 my ($inputSsn, $outputDirName);
 my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $outputSsnName, $cdhitFileName, $parentJobId);
-my ($minSeqLen, $searchType, $cdhitSid, $consThresh, $refDb);
+my ($minSeqLen, $maxSeqLen, $searchType, $cdhitSid, $consThresh, $refDb, $diamondSens);
 
 
 my $result = GetOptions(
@@ -34,10 +34,12 @@ my $result = GetOptions(
     "cdhit-out-name=s"  => \$cdhitFileName,
 
     "min-seq-len=i"     => \$minSeqLen,
+    "max-seq-len=i"     => \$maxSeqLen,
     "search-type=s"     => \$searchType,
     "cdhit-sid=i"       => \$cdhitSid,
     "cons-thresh=i"     => \$consThresh,
     "ref-db=s"          => \$refDb,
+    "diamond-sens=s"    => \$diamondSens,
 
     "parent-job-id=i"   => \$parentJobId,
     "job-id=i"          => \$jobId,
@@ -58,6 +60,7 @@ my $usage =
     -tmpdir         name of output directory (relative)
     
     -min-seq-len    minimum sequence length to use (to exclude fragments from UniRef90 SSNs)
+    -max-seq-len    maximim sequence length to use (to exclude sequences from UniRef90 SSNs)
     -search-type    type of search to use (diamond or blast)
     -cdhit-sid      Sequence identity to use for CD-HIT clustering proteins into families for consensus
                     sequence determination
@@ -65,6 +68,8 @@ my $usage =
                     sequences
     -ref-db         Which type of reference database to use (uniprot = full UniProt, uniref50 =
                     UniRef50, uniref90 = UniRef90)
+    -diamond-sens   The type of DIAMOND sensitivity to use (normal, sensitive, more-sensitive). If not
+                    specified, ShortBRED defaults to sensitive.
 
     -job-id         number of the job [optional]
     -parent-job-id  the ID of the parent job (for using previously-computed markers with a new SSN
@@ -85,10 +90,12 @@ $scheduler      = "slurm"       if not defined $scheduler or not $scheduler;
 $dryRun         = 0             if not defined $dryRun;
 $parentJobId    = 0             if not defined $parentJobId;
 $minSeqLen      = 0             if not defined $minSeqLen;
+$maxSeqLen      = 0             if not defined $maxSeqLen;
 $cdhitSid       = ""            if not defined $cdhitSid;
 $consThresh     = ""            if not defined $consThresh;
 $refDb          = "uniprot"     if not defined $refDb or ($refDb ne "uniref90" and $refDb ne "uniref50");
 $searchType     = ""            if not defined $searchType or $searchType ne "diamond";
+$diamondSens    = ""            if not defined $diamondSens or $searchType ne "diamond";
 
 if ($cdhitSid and $cdhitSid > 1) {
     $cdhitSid = substr($cdhitSid / 100, 0, 4);
@@ -179,6 +186,7 @@ if ($inputSsn =~ m/\.zip/i) {
 #######################################################################################################################
 # Get the clusters and accessions
 my $minSeqLenArg = $minSeqLen ? "-min-seq-len $minSeqLen" : "";
+my $maxSeqLenArg = $maxSeqLen ? "-max-seq-len $maxSeqLen" : "";
 
 $B = $S->getBuilder();
 $submitName = "sb_get_clusters";
@@ -192,7 +200,7 @@ $B->addAction("    echo \"ERROR: Cluster Number is not present in SSN\"");
 $B->addAction("    touch $ssnErrorDir/ssn_cl_num.failed");
 $B->addAction("    exit 1");
 $B->addAction("fi");
-$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile -sequence-file $ssnSequenceFile $minSeqLenArg");
+$B->addAction("$efiSbDir/get_clusters.pl -ssn $inputSsn -accession-file $ssnAccessionFile -cluster-file $ssnClusterFile -sequence-file $ssnSequenceFile $minSeqLenArg $maxSeqLenArg");
 # Add this check because we disable set -e above for grep.
 $B->addAction("if [ $? != 0 ]; then");
 $B->addAction("    echo \"ERROR: in get_clusters.pl\"");
@@ -219,7 +227,7 @@ if (not $parentJobId) {
     $B->addAction("module load $sbModule");
     $B->addAction("module load $dbModule");
     $B->addAction("sort $ssnAccessionFile > $sortedAcc");
-    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $sequenceDbPath $minSeqLenArg");
+    $B->addAction("$efiSbDir/get_fasta.pl -id-file $sortedAcc -output $fastaFile -blast-db $sequenceDbPath $minSeqLenArg $maxSeqLenArg");
     $B->addAction("SZ=`stat -c%s $ssnSequenceFile`");
     $B->addAction("if [[ \$SZ != 0 ]]; then");
     $B->addAction("    cat $ssnSequenceFile >> $fastaFile");
@@ -245,15 +253,16 @@ if (not $parentJobId) {
     # Run ShortBRED-Identify
 
     my $searchTypeArg = $searchType ? "--search_program $searchType" :
-                            ($ENV{SHORTBRED_MOD} =~ m/diamond/ ? "--search_program blast" : "");
+                            ($sbModule =~ m/diamond/ ? "--search_program blast" : ""); # If we're using the shortbred/diamond/* module then the default is the DIAMOND search, so if no search type is specified, we default to BLAST instead
     my $cdhitSidArg = $cdhitSid ? "--clustid $cdhitSid" : "";
     my $consThreshArg = $consThresh ? "--consthresh $consThresh" : "";
+    my $diamondSensArg = ($sbModule =~ m/diamond/ and $diamondSens) ? "--diamond-sensitivity $diamondSens" : "";
     
     $B = $S->getBuilder();
     $submitName = "sb_identify";
     $B->resource(1, $np, "300gb");
     $B->addAction("module load $sbModule");
-    $B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir $searchTypeArg $cdhitSidArg $consThreshArg");
+    $B->addAction("python $sbIdentifyApp --threads $np --goi $fastaFile --refdb $blastDbPath --markers $sbMarkerFile --tmp $sbOutputDir $searchTypeArg $cdhitSidArg $consThreshArg $diamondSensArg");
     $depId = doSubmit($depId);
 }
 

@@ -17,7 +17,7 @@ use Data::Dumper;
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandMetanodeIds getClusterNumber);
 
-my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile, $minSeqLen);
+my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile, $minSeqLen, $maxSeqLen);
 
 my $result = GetOptions(
     "ssn=s"             => \$ssn,
@@ -26,6 +26,7 @@ my $result = GetOptions(
     "default-numbering" => \$useDefaultClusterNumbering,
     "sequence-file=s"   => \$seqFile,
     "min-seq-len=i"     => \$minSeqLen,
+    "max-seq-len=i"     => \$maxSeqLen,
 );
 
 
@@ -38,6 +39,7 @@ $useDefaultClusterNumbering = 0 if not defined $useDefaultClusterNumbering;
 $useDefaultClusterNumbering = 1 if defined $useDefaultClusterNumbering;
 $seqFile = "" if not defined $seqFile;
 $minSeqLen = 0 if not defined $minSeqLen;
+$maxSeqLen = 1000000 if not defined $maxSeqLen;
 
 
 my $efiAnnoUtil = new EFI::Annotations;
@@ -247,7 +249,7 @@ sub saveSequence {
     }
 
     for (my $i = 0; $i <= $#ids; $i++) {
-        if ($seqs[$i] and length $seqs[$i] >= $minSeqLen) {
+        if ($seqs[$i] and length $seqs[$i] >= $minSeqLen and length $seqs[$i] <= $maxSeqLen) {
             $fh->print(">" . $ids[$i] . "\n" . $seqs[$i] . "\n\n");
         }
     }
