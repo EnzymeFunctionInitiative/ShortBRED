@@ -42,9 +42,9 @@ $0 -ssn-in path_to_input_ssn -ssn-out path_to_output_ssn
     [-protein-file path_to_protein_abundance_file -cluster-file path_to_cluster_abundance_file -quantify] <-- for quantify step
 USAGE
 
-die $usage if not defined $ssnIn or not -f $ssnIn or not defined $ssnOut or not $ssnOut;
-die $usage if not defined $isQuantify and (not defined $markerFile or not -f $markerFile);
-die $usage if defined $isQuantify and (not defined $proteinFile or not -f $proteinFile or not defined $clusterFile or not -f $clusterFile);
+die "$usage\nssnIn=$ssnIn ssnOut=$ssnOut" if not defined $ssnIn or not -f $ssnIn or not defined $ssnOut or not $ssnOut;
+die "$usage\nnot isQuantify and not marker file" if not defined $isQuantify and (not defined $markerFile or not -f $markerFile);
+die "$usage\nis quantify and missing prot or cluster file" if defined $isQuantify and (not defined $proteinFile or not -f $proteinFile or not defined $clusterFile or not -f $clusterFile);
 
 $isQuantify = 0 if not defined $isQuantify;
 $isMergedResults = 0 if not defined $isMergedResults;
@@ -279,8 +279,8 @@ sub writeQuantifyResults {
         #    $hasVal = $hasVal ? $val > 0 : 0;
         #    if ($hasVal) {
         #        my $mgName = $mgId;
-        #        $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
-        #        $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
+        #        $mgName = $mgInfo->{$mgId}->{bodysite} if exists $mgInfo->{$mgId}->{bodysite} and $mgInfo->{$mgId}->{bodysite};
+        #        $mgName .= ", " . $mgInfo->{$mgId}->{gender} if exists $mgInfo->{$mgId}->{gender} and $mgInfo->{$mgId}->{gender};
         #        push @mg, $mgName;
         #        push @vals, $abd->{proteins}->{$id}->{$mgId};
         #    }
@@ -330,8 +330,8 @@ sub getQuantifyVals {
         $hasVal = $hasVal ? $val > 0 : 0;
         if ($hasVal) {
             my $mgName = $mgId;
-            $mgName = $mgInfo->{$mgId}->{name} if exists $mgInfo->{$mgId}->{name} and $mgInfo->{$mgId}->{name};
-            $mgName .= ", " . $mgInfo->{$mgId}->{desc} if exists $mgInfo->{$mgId}->{desc} and $mgInfo->{$mgId}->{desc};
+            $mgName = $mgInfo->{$mgId}->{bodysite} if exists $mgInfo->{$mgId}->{bodysite} and $mgInfo->{$mgId}->{bodysite};
+            $mgName .= ", " . $mgInfo->{$mgId}->{gender} if exists $mgInfo->{$mgId}->{gender} and $mgInfo->{$mgId}->{gender};
             push @mg, $mgName;
             push @vals, $abd->{proteins}->{$id}->{$mgId};
         }

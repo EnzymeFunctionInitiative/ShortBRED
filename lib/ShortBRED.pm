@@ -182,6 +182,7 @@ sub getMetagenomeInfo {
     my @ids = @_;
 
     my $data = {};
+    my $meta = {};
 
     my @dbs = split(m/,/, $dbList);
     foreach my $dbFile (@dbs) {
@@ -190,14 +191,33 @@ sub getMetagenomeInfo {
         while (<DB>) {
             next if m/^#/;
             chomp;
-            my ($id, $name, $desc, $file) = split(m/\t/);
+            my ($id, $name, $gender, $file) = split(m/\t/);
+            
+            if ($name =~ m/-/) {
+                my ($name_id, $name_bodysite) = split(m/-/, $name);
+                $name_bodysite =~ s/^\s*(.*?)\s*$/$1/g;
+                $name = $name_bodysite;
+            }
+
             $file = "$dbDir/$id/$file" if $file;
-            $data->{$id} = {name => $name, desc => $desc, file_path => $file};
+            $data->{$id} = {bodysite => $name, gender => $gender, file_path => $file};
         }
         close DB;
+
+        my $metaFile = "$dbFile.metadata";
+        if (-f $metaFile) {
+            open META, $metaFile;
+            while (<META>) {
+                next if m/^#/;
+                chomp;
+                my ($bodysite, $color, $order) = split(m/\t/);
+                $meta->{$bodysite} = {color => $color, order => $order};
+            }
+            close META;
+        }
     }
 
-    return $data;
+    return ($data, $meta);
 }
 
 

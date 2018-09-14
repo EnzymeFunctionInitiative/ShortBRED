@@ -141,7 +141,7 @@ my $depId = 0;
 
 
 my @metagenomeIds = split(m/,/, $metagenomeIdList);
-my $metagenomeInfo = getMetagenomeInfo($dbFiles, @metagenomeIds);
+my ($metagenomeInfo, $mgMetadata) = getMetagenomeInfo($dbFiles, @metagenomeIds);
 
 
 
@@ -159,6 +159,10 @@ foreach my $mgId (@metagenomeIds) {
     $resFiles{$mgId} = $resFile;
     #push(@resFiles, $resFile);
 }
+
+
+# Sort the metagenome IDs according to a body site
+@metagenomeIds = sort mgSortFn @metagenomeIds;
 
 
 #######################################################################################################################
@@ -346,4 +350,26 @@ sub initDirectoryStructure {
 
 
 
+sub mgSortFn {
+    my $ag = $metagenomeInfo->{$a}->{gender};
+    my $bg = $metagenomeInfo->{$b}->{gender};
+    my $ab = $metagenomeInfo->{$a}->{bodysite};
+    my $bb = $metagenomeInfo->{$b}->{bodysite};
+    my $ao = exists $mgMetadata->{$ab} ? $mgMetadata->{$ab}->{order} : 0;
+    my $bo = exists $mgMetadata->{$bb} ? $mgMetadata->{$bb}->{order} : 0;
+
+    # Compare by order
+    my $ocmp = $ao cmp $bo;
+    return $ocmp if $ocmp;
+
+    # Compare by body site
+    my $bscmp = $ab cmp $bb;
+    return $bscmp if $bscmp;
+
+    # Compare by gender
+    my $gcmp = $ag cmp $bg;
+    return $gcmp if $gcmp;
+
+    return $a cmp $b;
+}
 
