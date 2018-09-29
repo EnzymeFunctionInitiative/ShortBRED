@@ -174,7 +174,7 @@ my $depId = 0;
 
 
 my @metagenomeIds = split(m/,/, $metagenomeIdList);
-my ($metagenomeInfo, $mgMetadata) = getMetagenomeInfo($dbFiles, @metagenomeIds);
+my ($metagenomeInfo, $mgMetadata) = getMetagenomeInfo($dbFiles);
 
 
 

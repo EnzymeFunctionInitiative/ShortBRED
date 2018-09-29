@@ -168,8 +168,10 @@ sub getClusterNumber {
         my $attrName = $annotation->getAttribute('name');
         if ($attrName eq "Cluster Number") {
             $val = $annotation->getAttribute('value');
+            last;
         } elsif ($attrName eq "Singleton Number") {
             $val = "S" . $annotation->getAttribute('value');
+            last;
         }
     }
 
@@ -179,7 +181,6 @@ sub getClusterNumber {
 
 sub getMetagenomeInfo {
     my $dbList = shift;
-    my @ids = @_;
 
     my $data = {};
     my $meta = {};

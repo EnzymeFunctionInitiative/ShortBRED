@@ -57,9 +57,10 @@ my $abData = {};
 
 my @metagenomeIds;
 my $metagenomeInfo = {};
+my $metaMeta = {};
 if (defined $metagenomeIdList and $metagenomeIdList and defined $dbFiles and $dbFiles) {
     @metagenomeIds = split(m/,/, $metagenomeIdList);
-    $metagenomeInfo = getMetagenomeInfo($dbFiles, @metagenomeIds);
+    ($metagenomeInfo, $metaMeta) = getMetagenomeInfo($dbFiles, @metagenomeIds);
 }
 
 my $cdhitInfo = {};
