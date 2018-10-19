@@ -153,8 +153,13 @@ my $sbOutputDir = "$outputDir/id-temp";
 my $sbMarkerFile = "$outputDir/markers.faa";
 my $cdhitFile = "$sbOutputDir/clust/clust.faa.clstr";
 my $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$outputDir/$cdhitFileName" : "$outputDir/cdhit.txt";
+my $cdhit100Fasta = "$fastaFile.cdhit100";
 my $colorFile = -f "$dbSupport/colors.tab" ? "$dbSupport/colors.tab" : "";
 my $clusterSizeFile = "$outputDir/cluster.sizes";
+my $metadataFile = "$outputDir/metadata.tab";
+my $metaClusterSizeFile = "$outputDir/cluster_sizes.tab";
+my $metaSpClusterFile = "$outputDir/swissprot_clusters.tab";
+my $metaSpSingleFile = "$outputDir/swissprot_singletons.tab";
 my $ssnMarker = "$outputDir/$outputSsnName";
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
@@ -168,6 +173,11 @@ if ($parentJobId) {
     $ssnClusterFile = "$childOutputDir/cluster";
     $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$childOutputDir/$cdhitFileName" : "$childOutputDir/cdhit.txt";
     $ssnMarker = "$childOutputDir/$outputSsnName";
+    $clusterSizeFile = "$childOutputDir/cluster.sizes";
+    $metadataFile = "$childOutputDir/metadata.tab";
+    $metaClusterSizeFile = "$childOutputDir/cluster_sizes.tab";
+    $metaSpClusterFile = "$childOutputDir/swissprot_clusters.tab";
+    $metaSpSingleFile = "$childOutputDir/swissprot_singletons.tab";
 }
 
 
@@ -213,7 +223,6 @@ if (not $parentJobId) {
     # CD-HIT params
     my $lenDiffCutoff = "1";
     my $seqIdCutoff = "1";
-    my $tempFasta = "$fastaFile.cdhit100";
     my $tempAcc = "$ssnAccessionFile.cdhit100";
     my $tempCluster = "$ssnClusterFile.cdhit100";
     my $sortedAcc = "$ssnAccessionFile.sorted";
@@ -232,12 +241,12 @@ if (not $parentJobId) {
     $B->addAction("if [[ \$SZ != 0 ]]; then");
     $B->addAction("    cat $ssnSequenceFile >> $fastaFile");
     $B->addAction("fi");
-    $B->addAction("cd-hit -c $seqIdCutoff -s $lenDiffCutoff -i $fastaFile -o $tempFasta -M 14900");
-    $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $sortedAcc -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $tempFasta.clstr");
+    $B->addAction("cd-hit -c $seqIdCutoff -s $lenDiffCutoff -i $fastaFile -o $cdhit100Fasta -M 14900");
+    $B->addAction("$efiSbDir/remove_redundant_sequences.pl -id-in $sortedAcc -cluster-in $ssnClusterFile -id-out $tempAcc -cluster-out $tempCluster -cdhit-file $cdhit100Fasta.clstr");
     $B->addAction("mv $fastaFile $fastaFile.full");
     $B->addAction("mv $ssnAccessionFile $ssnAccessionFile.full");
     $B->addAction("mv $ssnClusterFile $ssnClusterFile.full");
-    $B->addAction("mv $tempFasta $fastaFile");
+    $B->addAction("mv $cdhit100Fasta $fastaFile");
     $B->addAction("mv $tempAcc $ssnAccessionFile");
     $B->addAction("mv $tempCluster $ssnClusterFile");
     $B->addAction("SZ=`stat -c%s $ssnAccessionFile`");
@@ -276,7 +285,10 @@ $submitName = "sb_make_xgmml";
 $B->queue($memQueue);
 $B->resource(1, 1, "200gb");
 $B->addAction("module load $sbModule");
-#$B->addAction("$efiSbDir/find_cluster_sizes.pl -cluster-list-file $ssnClusterFile -output-file $clusterSizeFile");
+$B->addAction("$efiSbDir/create_metadata.pl -ssn $inputSsn -sequence-full $fastaFile.full -accession-unique $ssnAccessionFile " .
+    "-accession-full $ssnAccessionFile.full " .
+    "-cluster $ssnClusterFile -cdhit-100 $cdhit100Fasta.clstr -cdhit-sb $cdhitFile -markers $sbMarkerFile " .
+    "-metadata $metadataFile -cluster-size $metaClusterSizeFile -swissprot-cluster $metaSpClusterFile -swissprot-single $metaSpSingleFile");
 $B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile -cdhit-file $cdhitTableFile");
 $B->addAction("zip -j $ssnMarker.zip $ssnMarker");

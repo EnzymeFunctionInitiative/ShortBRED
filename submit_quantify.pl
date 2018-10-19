@@ -167,6 +167,7 @@ my $clusterMergedGenomeNormalized = "$targetDir/$clusterFileNameGenomeNormalized
 my $proteinMergedGenomeNormalized = "$targetDir/$proteinFileNameGenomeNormalizedMedian";
 
 my $outputSsn = "$targetDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
+my $metadataFile = "$targetDir/metadata.tab";
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
 my $submitFile = "";
@@ -196,9 +197,6 @@ foreach my $mgId (@metagenomeIds) {
 }
 
 
-# Sort the metagenome IDs according to a body site
-@metagenomeIds = sort mgSortFn @metagenomeIds;
-
 
 #######################################################################################################################
 # Run ShortBRED-Quantify on the markers
@@ -218,7 +216,7 @@ if (not $parentQuantifyId) {
             my $mgFile = $mgFiles{$mgId};
             my $resFileMedian = $resFilesMedian{$mgId};
             my $resFileMean = $resFilesMean{$mgId};
-            $B->addAction("python $sbQuantifyApp --threads $np --markers $sbMarkerFile --wgs $mgFile --results $resFileMedian --results-mean $resFileMean --tmp $sbOutputDir-$mgId");
+            $B->addAction("python $sbQuantifyApp --threads $np $searchTypeArgs --markers $sbMarkerFile --wgs $mgFile --results $resFileMedian --results-mean $resFileMean --tmp $sbOutputDir-$mgId");
         }
     } else {
         my $numMg = scalar @metagenomeIds;
@@ -228,6 +226,24 @@ if (not $parentQuantifyId) {
             my $excessTask = int(($numFiles * 24 - $numMg) / $numFiles);
             $maxTask = $maxTask - $excessTask;
         }
+
+        #my $numIds = scalar @metagenomeIds;
+        #my @sizeOrderedIds = @metagenomeIds; #sort { -s $mgFiles{$a} cmp -s $mgFiles{$b} } @metagenomeIds;
+        #my @evenDistIds; # Due to the allocation algorithm we're using here, some of the entries in the array will be empty.
+        #my $evenSize = $maxTask * $numFiles;
+        #my %sizes;
+        #for (my $i = 0; $i < $evenSize; $i++) {
+        #    my $taskNum = ($i % $maxTask) * $numFiles;
+        #    my $idx = int($i / $maxTask) + $taskNum;
+        #    my $mgId = $idx < $numIds ? $sizeOrderedIds[$idx] : "";
+        #    $evenDistIds[$idx] = $mgId;
+        #    print "$i $taskNum $idx $mgId\n";
+        #    
+        #    $sizes{$taskNum} = 0 if not exists $sizes{$taskNum};
+        #    if ($mgId) {
+        #        $sizes{$taskNum} += -s $mgFiles{$mgId};
+        #    }
+        #}
 
         my $tmpMarker = "$outputDir/markers.faa.{JOB_ARRAYID}";
 
@@ -247,7 +263,7 @@ if (not $parentQuantifyId) {
                 $B->addAction("if [ {JOB_ARRAYID} == $aid ]; then");
                 $B->addAction("    cp $sbMarkerFile $tmpMarker"); # Copy to possibly help performance out.
             }
-            $B->addAction("    python $sbQuantifyApp --markers $tmpMarker --wgs $mgFile --results $resFileMedian --results-mean $resFileMean --tmp $sbOutputDir-$mgId");
+            $B->addAction("    python $sbQuantifyApp $searchTypeArgs --markers $tmpMarker --wgs $mgFile --results $resFileMedian --results-mean $resFileMean --tmp $sbOutputDir-$mgId");
             $c++;
         }
         if ($c > 1) {
@@ -262,8 +278,11 @@ if (not $parentQuantifyId) {
 #######################################################################################################################
 # Merge quantify outputs into one table.
 
-my $resFileMedianList = join(" ", sort values %resFilesMedian);
-my $resFileMeanList = join(" ", sort values %resFilesMean);
+# Sort the metagenome IDs according to a body site
+my @sortedMgIds = sort mgSortFn @metagenomeIds;
+
+my $resFileMedianList = join(" ", map { $resFilesMedian{$_} } @sortedMgIds);
+my $resFileMeanList = join(" ", map { $resFilesMean{$_} } @sortedMgIds);
 
 $B = $S->getBuilder();
 $submitName = "sb_merge_quantify";
@@ -321,6 +340,7 @@ $B->addAction("    exit 621");
 $B->addAction("fi");
 $B->addAction("zip -j $outputSsn.zip $outputSsn");
 $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock")           if $mergeAllRuns;
+$B->addAction("$efiSbDir/create_quantify_metadata.pl -protein-abundance $proteinMerged -metadata $metadataFile");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 
