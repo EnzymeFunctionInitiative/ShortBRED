@@ -18,7 +18,7 @@ use File::Slurp;
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandMetanodeIds getClusterNumber);
 
-my ($ssn, $seqFullFile, $accUniqFile, $clusterFile, $cdhit100File, $cdhitSbFile, $minSeqLen, $maxSeqLen, $markerFile, $metadataFile);
+my ($ssn, $seqFullFile, $accUniqFile, $clusterFile, $cdhitSbFile, $minSeqLen, $maxSeqLen, $markerFile, $metadataFile);
 my ($spClusterFile, $spSingleFile, $clusterSizeFile, $accFullFile);
 
 my $result = GetOptions(
@@ -27,7 +27,6 @@ my $result = GetOptions(
     "accession-unique=s"    => \$accUniqFile, # list of accession IDs after min/max length filter and CD-HIT 100 uniquing
     "accession-full=s"      => \$accFullFile, # list of accession IDs after min/max length filter and CD-HIT 100 uniquing
     "cluster=s"             => \$clusterFile,
-    "cdhit-100=s"           => \$cdhit100File, # output of CD-HIT 100 process (unique sequences)
     "cdhit-sb=s"            => \$cdhitSbFile, # output of ShortBRED CD-HIT process (# CD-HIT clusters)
     "min-seq-len=i"         => \$maxSeqLen, 
     "max-seq-len=i"         => \$maxSeqLen, 
@@ -39,17 +38,17 @@ my $result = GetOptions(
 );
 
 print "missing ssn\n" and exit(0) if not $ssn or not -f $ssn;
-print "missing seqFullFile\n" and exit(0) if not $seqFullFile or not -f $seqFullFile;
 print "missing accFullFile\n" and exit(0) if not $accFullFile or not -f $accFullFile;
-print "missing accUniqFile\n" and exit(0) if not $accUniqFile or not -f $accUniqFile;
 print "missing clusterFile\n" and exit(0) if not $clusterFile or not -f $clusterFile;
-print "missing cdhit100File\n" and exit(0) if not $cdhit100File or not -f $cdhit100File;
-print "missing cdhitSbFile\n" and exit(0) if not $cdhitSbFile or not -f $cdhitSbFile;
-print "missing markerFile\n" and exit(0) if not $markerFile or not -f $markerFile;
 print "missing metadataFile\n" and exit(0) if not $metadataFile;
 print "missing clusterSizeFile\n" and exit(0) if not $clusterSizeFile;
 print "missing spClusterFile\n" and exit(0) if not $spClusterFile;
 print "missing spSingleFile\n" and exit(0) if not $spSingleFile;
+#Not provided in the case of a child job.
+#print "missing cdhitSbFile\n" and exit(0) if not $cdhitSbFile or not -f $cdhitSbFile;
+#print "missing markerFile\n" and exit(0) if not $markerFile or not -f $markerFile;
+#print "missing accUniqFile\n" and exit(0) if not $accUniqFile or not -f $accUniqFile;
+#print "missing seqFullFile\n" and exit(0) if not $seqFullFile or not -f $seqFullFile;
 
 
 $minSeqLen = "none" if not defined $minSeqLen or not $minSeqLen;
@@ -62,17 +61,17 @@ my $spKey = "Swissprot Description";
 
 my $metadata = {
     num_metanodes => 0,
-    num_raw_accessions => 0,
-    min_seq_len => $minSeqLen,
-    max_seq_len => $maxSeqLen,
-    num_filtered_seq => 0,
-    num_unique_seq => 0,
-    num_cdhit_clusters => 0,
-    num_ssn_clusters => 0,
     num_ssn_singletons => 0,
-    num_markers => 0,
+    num_ssn_clusters => 0,
 };
 
+# These files will not be provided if we're running child job.
+if ($markerFile and -f $markerFile and $accUniqFile and -f $accUniqFile and
+    $seqFullFile and -f $seqFullFile and $cdhitSbFile and -f $cdhitSbFile)
+{
+    $metadata->{min_seq_len} = $minSeqLen;
+    $metadata->{max_seq_len} = $maxSeqLen;
+}
 
 my $efiAnnoUtil = new EFI::Annotations;
 my $reader = XML::LibXML::Reader->new(location => $ssn);
@@ -82,21 +81,26 @@ my $numRawSeq = `wc -l < $accFullFile`;
 chomp $numRawSeq;
 $metadata->{num_raw_accessions} = $numRawSeq;
 
-my $numFiltSeq = `grep '^>' $seqFullFile | wc -l`;
-chomp $numFiltSeq;
-$metadata->{num_filtered_seq} = $numFiltSeq;
-
-my $numUniqSeq = `wc -l < $accUniqFile`;
-chomp $numUniqSeq;
-$metadata->{num_unique_seq} = $numUniqSeq;
-
-my $numSbClusters = `grep '^>' $cdhitSbFile | wc -l`;
-chomp $numSbClusters;
-$metadata->{num_cdhit_clusters} = $numSbClusters;
-
-my $numMarkers = `grep '^>' $markerFile | wc -l`;
-chomp $numMarkers;
-$metadata->{num_markers} = $numMarkers;
+if ($seqFullFile and -f $seqFullFile) {
+    my $numFiltSeq = `grep '^>' $seqFullFile | wc -l`;
+    chomp $numFiltSeq;
+    $metadata->{num_filtered_seq} = $numFiltSeq;
+}
+if ($accUniqFile and -f $accUniqFile) {
+    my $numUniqSeq = `wc -l < $accUniqFile`;
+    chomp $numUniqSeq;
+    $metadata->{num_unique_seq} = $numUniqSeq;
+}
+if ($cdhitSbFile and -f $cdhitSbFile) {
+    my $numSbClusters = `grep '^>' $cdhitSbFile | wc -l`;
+    chomp $numSbClusters;
+    $metadata->{num_cdhit_clusters} = $numSbClusters;
+}
+if ($markerFile and -f $markerFile) {
+    my $numMarkers = `grep '^>' $markerFile | wc -l`;
+    chomp $numMarkers;
+    $metadata->{num_markers} = $numMarkers;
+}
 
 
 
@@ -125,7 +129,7 @@ open SPSINGLE, ">", $spSingleFile or die "Unable to write to swissprot singleton
 print SPCLUSTER join("\t", "Cluster Number", "Protein ID", "SwissProt Annotation"), "\n";
 print SPSINGLE join("\t", "Cluster Number", "Protein ID", "SwissProt Annotation"), "\n";
 
-@clusterIds = sort { (my $aa = $a) =~ s/\D//g; (my $bb = $b) =~ s/\D//g; $aa <=> $bb } keys %$spStatus;
+@clusterIds = sort { (my $aa = $a) =~ s/\D//g; (my $bb = $b) =~ s/\D//g; ($aa and $bb) ? $aa <=> $bb : 1 } keys %$spStatus;
 foreach my $cid (@clusterIds) {
     my $fh = $cid =~ m/^\d/ ? \*SPCLUSTER : \*SPSINGLE;
     foreach my $id (sort keys %{ $spStatus->{$cid} }) {

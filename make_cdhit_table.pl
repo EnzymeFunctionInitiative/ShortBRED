@@ -30,8 +30,9 @@ my $usage =
 "$0 -cdhit-file path_to_input_cdhit_file -table-file path_to_output_table [-color-file path_to_input_colors_file]
 ";
 
-die $usage if not defined $cdhitInput or not -f $cdhitInput or not defined $tableOutput or not $tableOutput or
-              not defined $clusterMapFile or not -f $clusterMapFile;
+die "$usage\n-cdhit-file not provided" if not defined $cdhitInput or not -f $cdhitInput;
+die "$usage\n-table-file not provided" if not defined $tableOutput or not $tableOutput;
+die "$usage\n-cluster-map not provided" if not defined $clusterMapFile or not -f $clusterMapFile;
 
 my $colors = {};
 if (defined $colorFile and -f $colorFile) {

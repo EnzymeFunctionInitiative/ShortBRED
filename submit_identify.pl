@@ -153,7 +153,6 @@ my $sbOutputDir = "$outputDir/id-temp";
 my $sbMarkerFile = "$outputDir/markers.faa";
 my $cdhitFile = "$sbOutputDir/clust/clust.faa.clstr";
 my $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$outputDir/$cdhitFileName" : "$outputDir/cdhit.txt";
-my $cdhit100Fasta = "$fastaFile.cdhit100";
 my $colorFile = -f "$dbSupport/colors.tab" ? "$dbSupport/colors.tab" : "";
 my $clusterSizeFile = "$outputDir/cluster.sizes";
 my $metadataFile = "$outputDir/metadata.tab";
@@ -226,6 +225,7 @@ if (not $parentJobId) {
     my $tempAcc = "$ssnAccessionFile.cdhit100";
     my $tempCluster = "$ssnClusterFile.cdhit100";
     my $sortedAcc = "$ssnAccessionFile.sorted";
+    my $cdhit100Fasta = "$fastaFile.cdhit100";
 
     #######################################################################################################################
     # Get the FASTA files from the database
@@ -279,16 +279,22 @@ if (not $parentJobId) {
 #######################################################################################################################
 # Build the XGMML file with the marker attributes added
 
+my @metaParams = ("-ssn $inputSsn", "-cluster $ssnClusterFile", "-metadata $metadataFile",
+                  "-cluster-size $metaClusterSizeFile", "-swissprot-cluster $metaSpClusterFile", "-swissprot-single $metaSpSingleFile");
+if (!$parentJobId) {
+    push(@metaParams, "-sequence-full $fastaFile.full", "-accession-unique $ssnAccessionFile", "-cdhit-sb $cdhitFile",
+                      "-markers $sbMarkerFile", "-accession-full $ssnAccessionFile.full");
+} else {
+    push(@metaParams, "-accession-full $ssnAccessionFile");
+}
+
 my $colorFileArg = $colorFile ? "-color-file $colorFile" : "";
 $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
 $B->queue($memQueue);
 $B->resource(1, 1, "200gb");
 $B->addAction("module load $sbModule");
-$B->addAction("$efiSbDir/create_metadata.pl -ssn $inputSsn -sequence-full $fastaFile.full -accession-unique $ssnAccessionFile " .
-    "-accession-full $ssnAccessionFile.full " .
-    "-cluster $ssnClusterFile -cdhit-100 $cdhit100Fasta.clstr -cdhit-sb $cdhitFile -markers $sbMarkerFile " .
-    "-metadata $metadataFile -cluster-size $metaClusterSizeFile -swissprot-cluster $metaSpClusterFile -swissprot-single $metaSpSingleFile");
+$B->addAction("$efiSbDir/create_metadata.pl " . join(" ", @metaParams));
 $B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile -cdhit-file $cdhitTableFile");
 $B->addAction("zip -j $ssnMarker.zip $ssnMarker");
