@@ -48,7 +48,7 @@ my @clusters = $parser->get_clusters();
 
 open OUTPUT, "> $tableOutput" or die "Unable to open table output $tableOutput: $!";
 
-my @headers = ("CD-HIT Seed Sequence", "Protein", "Cluster Number");
+my @headers = ("Cluster Number", "CD-HIT Seed Sequence", "Protein");
 push(@headers, "CD-HIT Seed Sequence Color (If has a Marker)") if keys %$colors;
 print OUTPUT join("\t", @headers), "\n";
 
@@ -59,7 +59,7 @@ foreach my $cluster (@clusters) {
     $c++;
     foreach my $child (@children) {
         my $clusterNum = exists $clusterMap->{$child} ? $clusterMap->{$child} : "N/A";
-        my @vals = ($cluster, $child, $clusterNum);
+        my @vals = ($clusterNum, $cluster, $child);
         push(@vals, $color) if keys %$colors;
         print OUTPUT join("\t", @vals), "\n";
     }
