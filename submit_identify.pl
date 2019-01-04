@@ -143,7 +143,7 @@ if ($refDb ne "uniprot") {
 }
 $blastDbPath .= ".fasta" if -f "$blastDbPath.fasta.pal";
 
-my $sequenceDbPath = $ENV{EFI_DB_DIR} . "/" . $defaultDb;
+my $sequenceDbPath = $ENV{EFI_DB_DIR} . "/" . $defaultDb . ".fasta";
 
 my $efiSbDir = $ENV{EFI_SHORTBRED_HOME};
 my $ssnAccessionFile = "$outputDir/accession";
