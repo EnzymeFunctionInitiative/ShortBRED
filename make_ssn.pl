@@ -69,6 +69,7 @@ if (defined $cdhitFile and -f $cdhitFile) {
 }
 
 
+
 # Only get marker data and cluster map if we're generating the data from the initial step
 if (not $isQuantify) {
     $markerData = getMarkerData($markerFile);
@@ -255,21 +256,29 @@ sub writeQuantifyResults {
 
     my $mgList = $abd->{metagenomes};
 
-    my (@mg, @vals, @markerIds, @seedIds, @mgMarker, @mgMarkerVals);
+    my (@mg, @vals, @markerIds, @seedIds, @mgMarker, @mgMarkerVals, @seedMgMarker);
     foreach my $id (@xids) {
-        next if not exists $abd->{proteins}->{$id};
-        
-        # This node is a seed sequence
-        if (exists $cdhitInfo->{seeds}->{$id}) {
-            my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $id);
-            push @mg, @$mgLocal;
-            push @vals, @$valsLocal;
-            push @markerIds, $id;
-            push @mgMarker, map { "$id - $_" } @$mgLocal;
-            push @mgMarkerVals, map { "$id - $_" } @$valsLocal;
+        # Check if there are any results for the current node (seed or not)
+        if (exists $abd->{proteins}->{$id}) {
+            # This node is a seed sequence
+            if (exists $cdhitInfo->{seeds}->{$id}) {
+                my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $id);
+                push @mg, @$mgLocal;
+                push @vals, @$valsLocal;
+                push @markerIds, $id;
+                push @mgMarker, map { "$id - $_" } @$mgLocal;
+                push @mgMarkerVals, map { "$id - $_" } @$valsLocal;
+            }
+            elsif (exists $cdhitInfo->{members}->{$id}) {
+                print STDERR "WARNING: There were some results for a non-seed sequence: $id\n";
+            }
         }
-        elsif (exists $cdhitInfo->{members}->{$id}) {
-            print STDERR "WARNING: There were some results for a non-seed sequence: $id";
+
+        # Check if there are any results for the "parent" (seed) sequence.
+        if (exists $cdhitInfo->{members}->{$id} and exists $abd->{proteins}->{$cdhitInfo->{members}->{$id}}) {
+            my $seed = $cdhitInfo->{members}->{$id};
+            my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seed);
+            push @seedMgMarker, map { "$seed - $_" } @$mgLocal;
         }
         
         # This code is retained in case we want to add quantify results to the SSN in the future.
@@ -290,6 +299,10 @@ sub writeQuantifyResults {
 
     if (scalar @mgMarker) {
         writeGnnListField($writer, "Metagenomes Identified by Markers", "string", \@mgMarker);
+    }
+
+    if (scalar @seedMgMarker) {
+        writeGnnListField($writer, "Metagenomes Identified by CD-HIT Family", "string", \@seedMgMarker);
     }
 
     # This code is retained in case we want to add quantify results to the SSN in the future.
@@ -472,7 +485,7 @@ sub getCdHitClusters {
 
     while (<FILE>) {
         chomp;
-        my ($seed, $id) = split(m/\t/);
+        my ($cluster, $seed, $id) = split(m/\t/);
         $info->{members}->{$id} = $seed;
         push(@{$info->{seeds}->{$seed}}, $id);
     }

@@ -129,7 +129,7 @@ my $sbIdentifyApp = $ENV{SHORTBRED_IDENTIFY};
 if ($searchType eq "diamond") {
     $blastDbPath = $ENV{EFI_DIAMOND_DB_DIR};
 }
-my $defaultDb = exists $ENV{EFI_UNIPROT_DB} ? $ENV{EFI_UNIPROT_DB} : "combined.fasta";
+my $defaultDb = exists $ENV{EFI_UNIPROT_DB} ? $ENV{EFI_UNIPROT_DB} : "combined";
 if ($refDb ne "uniprot") {
     if ($refDb eq "uniref50") {
         $blastDbPath .= "/uniref50";
@@ -141,6 +141,7 @@ if ($refDb ne "uniprot") {
 } else {
     $blastDbPath .= "/$defaultDb";
 }
+$blastDbPath .= ".fasta" if -f "$blastDbPath.fasta.pal";
 
 my $sequenceDbPath = $ENV{EFI_DB_DIR} . "/" . $defaultDb;
 
@@ -200,7 +201,8 @@ my $maxSeqLenArg = $maxSeqLen ? "-max-seq-len $maxSeqLen" : "";
 $B = $S->getBuilder();
 $submitName = "sb_get_clusters";
 $B->setScriptAbortOnError(0); # grep causes the script to abort if we have set -e in the script.
-$B->resource(1, 1, "70gb");
+$B->queue($memQueue);
+$B->resource(1, 1, "150gb");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
 $B->addAction("HASCLUSTERNUM=`head -2000 $inputSsn | grep -m1 -e \"Cluster Number\" -e \"Singleton Number\"`");

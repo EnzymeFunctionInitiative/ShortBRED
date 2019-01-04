@@ -54,8 +54,6 @@ print "missing spSingleFile\n" and exit(0) if not $spSingleFile;
 $minSeqLen = "none" if not defined $minSeqLen or not $minSeqLen;
 $maxSeqLen = "none" if not defined $maxSeqLen or not $maxSeqLen;
 
-# Field for reading if node is SwissProt annotated.
-my $spKey = "Swissprot Description";
 
 
 
@@ -180,7 +178,7 @@ sub countSsnAccessions {
             my $clusterId = getClusterNumber($nodeId, $xmlNode);
             $singleCount++ if not $clusterId or $clusterId =~ m/^S/;
             $clusterSize{$clusterId} += scalar @expandedIds if $clusterId and $clusterId =~ m/^\d/;
-            my $status = getSwissProtDesc($xmlNode);
+            my $status = EFI::Annotations::get_swissprot_description($xmlNode);
             my $clSizeId = (not $clusterId) ? "Singletons" : $clusterId;
             $spStatus{$clSizeId}->{$nodeId} = $status if $status;
         }
@@ -216,29 +214,4 @@ sub checkUniRef {
 }
 
 
-# Returns the SwissProt description, if any
-sub getSwissProtDesc {
-    my $xmlNode = shift;
-
-    my $spStatus = "";
-
-    my @annotations = $xmlNode->findnodes("./*");
-    foreach my $annotation (@annotations) {
-        my $attrName = $annotation->getAttribute("name");
-        if ($attrName eq $spKey) {
-            my $attrType = $annotation->getAttribute("type");
-
-            if ($attrType and $attrType eq "list") {
-                $spStatus = getSwissProtDesc($annotation);
-            } else {
-                my $val = $annotation->getAttribute("value");
-                $spStatus = $val if $val and length $val > 3; # Skip NA and N/A
-            }
-
-            last if $spStatus;
-        }
-    }
-
-    return $spStatus;
-}
 
