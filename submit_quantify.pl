@@ -177,6 +177,13 @@ my $depId = 0;
 my @metagenomeIds = split(m/,/, $metagenomeIdList);
 my ($metagenomeInfo, $mgMetadata) = getMetagenomeInfo($dbFiles);
 
+# Get the specific avg genome size file, if present.
+my ($mgDir) = split(m/,/, $dbFiles);
+my $agsFileName = "AvgGenomeSize.txt";
+if ($mgDir and -f "$mgDir/$agsFileName") {
+    $agsFilePath = "$mgDir/$agsFileName";
+}
+
 
 
 # Get the list of result files.
