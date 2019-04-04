@@ -17,6 +17,7 @@ use File::Slurp;
 
 use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(expandMetanodeIds getClusterNumber);
+use EFI::SSN;
 
 my ($ssn, $seqFullFile, $accUniqFile, $clusterFile, $cdhitSbFile, $minSeqLen, $maxSeqLen, $markerFile, $metadataFile);
 my ($spClusterFile, $spSingleFile, $clusterSizeFile, $accFullFile);
@@ -72,8 +73,9 @@ if ($markerFile and -f $markerFile and $accUniqFile and -f $accUniqFile and
 }
 
 my $efiAnnoUtil = new EFI::Annotations;
-my $reader = XML::LibXML::Reader->new(location => $ssn);
-my ($clusterSize, $spStatus) = countSsnAccessions($reader, $metadata);
+#my $reader = XML::LibXML::Reader->new(location => $ssn);
+#my ($clusterSize, $spStatus) = countSsnAccessions($reader, $metadata);
+my ($clusterSize, $spStatus) = countSsnAccessions2($ssn, $metadata);
 
 my $numRawSeq = `wc -l < $accFullFile`;
 chomp $numRawSeq;
@@ -147,44 +149,36 @@ close SPCLUSTER;
 
 
 # Gets the node and edge objects, as well as writes any sequences in the XGMML to the sequence file.
-sub countSsnAccessions {
-    my $reader = shift;
+sub countSsnAccessions2 {
+    my $ssnFile = shift;
     my $metadata = shift;
 
-    my $parser = XML::LibXML->new();
-    $reader->read();
-    my $firstnode = $reader->nextElement();
+    my $ssnParser = openSsn($ssnFile);
 
-#    my @nodeIds;
     my %spStatus;
     my %clusterSize;
     my $singleCount = 0;
 
-    my %degrees;
-    do {
-        next if ($reader->nodeType == 8);
+    my $nodeHandler = sub {
+        my ($xmlNode, $params) = @_;
+        my $nodeId = $params->{node_id};
 
-        my $tmpstring = $reader->readOuterXml;
-        my $tmpnode = $parser->parse_string($tmpstring);
-        my $xmlNode = $tmpnode->firstChild;
-        if ($reader->name() eq "node") {
-            my $nodeId = $xmlNode->getAttribute("label");
-            my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
-            push @expandedIds, $nodeId if not grep /$nodeId/, @expandedIds;
-            $metadata->{num_metanodes}++;
+        my $numChildNodes = scalar @{$params->{node_ids}};
+        my $clusterId = $params->{cluster_num};
+        my $status = EFI::Annotations::get_swissprot_description($xmlNode);
+        my $clSizeId = (not $clusterId) ? "Singletons" : $clusterId;
         
-            $metadata->{is_uniref} = checkUniRef($xmlNode) if not exists $metadata->{is_uniref};
-            
-            my $clusterId = getClusterNumber($nodeId, $xmlNode);
-            $singleCount++ if not $clusterId or $clusterId =~ m/^S/;
-            $clusterSize{$clusterId} += scalar @expandedIds if $clusterId and $clusterId =~ m/^\d/;
-            my $status = EFI::Annotations::get_swissprot_description($xmlNode);
-            my $clSizeId = (not $clusterId) ? "Singletons" : $clusterId;
-            $spStatus{$clSizeId}->{$nodeId} = $status if $status;
-        }
-    } while ($reader->nextSiblingElement());
+        $metadata->{num_metanodes}++;
+        $metadata->{is_uniref} = checkUniRef($xmlNode) if not exists $metadata->{is_uniref};
+        $singleCount++ if not $clusterId or $clusterId =~ m/^S/;
+        $clusterSize{$clusterId} += $numChildNodes if $clusterId and $clusterId =~ m/^\d/;
+        $spStatus{$clSizeId}->{$nodeId} = $status if $status;
+    };
 
-# Somehow this doesn't work properly in all situations    $metadata->{num_raw_accessions} = scalar @nodeIds;
+    $ssnParser->registerHandler(NODE_READER, $nodeHandler);
+    $ssnParser->registerAnnotationUtil($efiAnnoUtil);
+
+    $ssnParser->parse(OPT_EXPAND_METANODE_IDS | OPT_GET_CLUSTER_NUMBER);
 
     my @clusterIds = keys %clusterSize;
     $metadata->{num_ssn_clusters} = scalar @clusterIds;
@@ -192,7 +186,6 @@ sub countSsnAccessions {
 
     return \%clusterSize, \%spStatus;
 }
-
 
 
 # Returns the UniRef version (e.g. 50 or 90) that the SSN was generated with, or 0 if UniRef was not used.

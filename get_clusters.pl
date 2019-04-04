@@ -15,7 +15,8 @@ use FindBin;
 use Data::Dumper;
 
 use lib $FindBin::Bin . "/lib";
-use ShortBRED qw(expandMetanodeIds getClusterNumber);
+use ShortBRED qw();
+use EFI::SSN;
 
 my ($ssn, $accFile, $clusterFile, $useDefaultClusterNumbering, $seqFile, $minSeqLen, $maxSeqLen);
 
@@ -44,15 +45,19 @@ $maxSeqLen = 1000000 if not defined $maxSeqLen;
 
 my $efiAnnoUtil = new EFI::Annotations;
 
-my $reader = XML::LibXML::Reader->new(location => $ssn);
+#my $reader = XML::LibXML::Reader->new(location => $ssn);
 
 #my ($name, $nodes, $edges, $degrees) = getNodesAndEdges($reader);
-my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdgesAndSequences($reader, $seqFile);
+my ($network, $nodeIds, $clusterNumbers) = getNodesAndEdgesAndSequences3($ssn, $seqFile);
 my ($clusters, $constellations) = getClusters($network, $nodeIds);
 
 
 # Sort by cluster size
-my @clusterIds = sort { scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}}) } keys %$clusters;
+my @clusterIds = sort {
+        my $cmp = scalar(@{$clusters->{$b}}) <=> scalar(@{$clusters->{$a}});
+        return $cmp if $cmp;
+        return $a <=> $b;
+    } keys %$clusters;
 
 open CLUSTER, "> $clusterFile" or die "Unable to write to cluster file $clusterFile: $!";
 open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile: $!";
@@ -60,35 +65,6 @@ open ACCESSION, "> $accFile" or die "Unable to write to accession file $accFile:
 my $clusterCount = 0;
 my $singleCount = 0;
 my @singles;
-
-#foreach my $clusterId (@clusterIds) {
-#    my @ids = sort @{$clusters->{$clusterId}};
-#    my $isSingle = scalar @ids == 1;
-#    if ($isSingle) {
-#        push @singles, $ids[0];
-#        next;
-#    }
-#    $clusterCount++;
-#    foreach my $id (@ids) {
-#        my $clusterNumber = $clusterCount;
-#        if (exists $clusterNumbers->{$id}) {
-#            $clusterNumber = $clusterNumbers->{$id};
-#        }
-#        print CLUSTER join("\t", $clusterNumber, $id), "\n";
-#        print ACCESSION "$id\n";
-#    }
-#}
-#
-#$singleCount = $clusterCount + 1;
-#foreach my $singleId (@singles) {
-#    $singleCount++;
-#    my $clusterNumber = $singleCount;
-#    if (exists $clusterNumbers->{$id}) {
-#        $clusterNumber = $clusterNumbers->{$id};
-#    }
-#    print CLUSTER join("\t", "S$clusterNumber", $id), "\n";
-#    print ACCESSION "$id\n";
-#}
 
 foreach my $clusterId (@clusterIds) {
     my @ids = sort @{$clusters->{$clusterId}};
@@ -102,8 +78,6 @@ foreach my $clusterId (@clusterIds) {
         my $clusterNumber = $clusterCount;
         if (exists $clusterNumbers->{$id}) {
             $clusterNumber = $clusterNumbers->{$id};
-#        } elsif ($isSingle) {
-#            $clusterNumber = $singleCount;
         }
         print CLUSTER join("\t", $clusterNumber, $id), "\n";
         print ACCESSION "$id\n";
@@ -126,80 +100,64 @@ close CLUSTER;
 
 
 
-# Gets the node and edge objects, as well as writes any sequences in the XGMML to the sequence file.
-sub getNodesAndEdgesAndSequences {
-    my $reader = shift;
+
+
+sub getNodesAndEdgesAndSequences3 {
+    my $ssnFile = shift;
     my $seqFile = shift;
+
+    my $ssn = openSsn($ssnFile);
+    die "Unable to open SSN $ssnFile for reading: $!" if not $ssn;
 
     if ($seqFile) {
         open SEQ, ">$seqFile";
     }
 
-    my @nodes;
-    my @edges;
-    my $parser = XML::LibXML->new();
-    $reader->read();
-    if ($reader->nodeType == 8) {
-        $reader->read; #we do not want to start reading a comment
-    }
-    my $graphname = $reader->getAttribute('label');
-    my $firstnode = $reader->nextElement();
-    my $tmpstring = $reader->readOuterXml;
-    my $tmpnode = $parser->parse_string($tmpstring);
-    my $xmlNode = $tmpnode->firstChild;
-
     my @network;
     my @nodeIds;
     my $clusterNumbers = {};
 
-    if ($reader->name() eq "node"){
-        push @nodes, $xmlNode;
-        my $nodeId = $xmlNode->getAttribute("label");
-        push @nodeIds, $nodeId;
-        my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
-        my $clusterNum = getClusterNumber($nodeId, $xmlNode);
-        if ($clusterNum) {
-            map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
+    my $metaHandler = sub {};
+    my $nodeHandler = sub {
+        my ($xmlNode, $params) = @_;
+        my $nodeId = $params->{node_id};
+        saveSequence($xmlNode, $nodeId, \*SEQ) if $seqFile;
+        my @ids = (@{$params->{node_ids}}, $nodeId);
+        if ($params->{cluster_num}) {
+            foreach my $id (@ids) {
+                $clusterNumbers->{$id} = $params->{cluster_num} if not exists $clusterNumbers->{$id};
+            }
         }
-        saveSequence(\*SEQ, $nodeId, $xmlNode) if $seqFile;
-        push @nodeIds, @expandedIds;
-    }
-
-    my %degrees;
-    while ($reader->nextSiblingElement()) {
-        $tmpstring = $reader->readOuterXml;
-        $tmpnode = $parser->parse_string($tmpstring);
-        $xmlNode = $tmpnode->firstChild;
-        if ($reader->name() eq "node") {
-            push @nodes, $xmlNode;
-            my $nodeId = $xmlNode->getAttribute("label");
-            push @nodeIds, $nodeId;
-            my @expandedIds = expandMetanodeIds($nodeId, $xmlNode, $efiAnnoUtil);
-            my $clusterNum = getClusterNumber($nodeId, $xmlNode);
-            if ($clusterNum) {
-                map { $clusterNumbers->{$_} = $clusterNum; } (@expandedIds, $nodeId);
-            }
-            saveSequence(\*SEQ, $nodeId, $xmlNode) if $seqFile;
-            push @nodeIds, @expandedIds;
-        } elsif($reader->name() eq "edge") {
-            push @edges, $xmlNode;
-            
-            my $label = $xmlNode->getAttribute("label");
-            my ($source, $target);
-            if (defined $label) {
-                ($source, $target) = split(m/,/, $label);
-            }
-            if (not defined $source or not $source or not defined $target or not $target) {
-                $source = $xmlNode->getAttribute("source");
-                $target = $xmlNode->getAttribute("target");
-            }
-
-            die "$tmpstring: " . Dumper($xmlNode) if not $source;
-            die "Target" if not $target;
-
-            push @network, {source => $source, target => $target};
+        push @nodeIds, @ids;
+    };
+    my $edgeHandler = sub {
+        my $xmlNode = shift;
+        
+        my $label = $xmlNode->getAttribute("label");
+        my ($source, $target);
+        if (defined $label) {
+            ($source, $target) = split(m/,/, $label);
         }
-    }
+        if (not defined $source or not $source or not defined $target or not $target) {
+            $source = $xmlNode->getAttribute("source");
+            $target = $xmlNode->getAttribute("target");
+        }
+
+        die "No source $xmlNode" if not $source;
+        die "No target $xmlNode" if not $target;
+
+        $source =~ s/:\d+:\d+$//;
+        $target =~ s/:\d+:\d+$//;
+
+        push @network, {source => $source, target => $target};
+    };
+
+    $ssn->registerHandler(METADATA_READER, $metaHandler);
+    $ssn->registerHandler(NODE_READER, $nodeHandler);
+    $ssn->registerHandler(EDGE_READER, $edgeHandler);
+    $ssn->registerAnnotationUtil($efiAnnoUtil);
+
+    $ssn->parse(OPT_GET_CLUSTER_NUMBER | OPT_EXPAND_METANODE_IDS);
 
     if ($seqFile) {
         close SEQ;
@@ -210,10 +168,9 @@ sub getNodesAndEdgesAndSequences {
 
 
 sub saveSequence {
-    my $fh = shift;
-    my $nodeId = shift;
     my $xmlNode = shift;
-
+    my $nodeId = shift;
+    my $fh = shift;
 
     my @seqs;
     my @ids;
@@ -244,7 +201,7 @@ sub saveSequence {
         }
     }
 
-    if (not scalar @ids) {
+    if (not scalar @ids and scalar @seqs) {
         push @ids, $nodeId;
     }
 

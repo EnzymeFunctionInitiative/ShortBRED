@@ -8,9 +8,6 @@ BEGIN {
 use strict;
 use warnings;
 
-use XML::LibXML;
-use XML::Writer;
-use XML::LibXML::Reader;
 use Getopt::Long;
 use FindBin;
 
@@ -18,6 +15,7 @@ use lib $FindBin::Bin . "/lib";
 use ShortBRED qw(getAbundanceData expandMetanodeIds getClusterMap getMetagenomeInfo);
 use EFI::Annotations;
 use EFI::CdHitParser;
+use EFI::SSN;
 
 
 my ($ssnIn, $ssnOut, $markerFile, $proteinFile, $clusterFile, $clusterMapFile, $isQuantify, $dbFiles, $metagenomeIdList, $cdhitFile);
@@ -78,13 +76,19 @@ if (not $isQuantify) {
     $abData = getAbundanceData($proteinFile, $clusterFile, 1, $isMergedResults); # cleanIds = yes, don't use merged data (cluster num in separate column) = yes
 }
 
-my $reader = XML::LibXML::Reader->new(location => $ssnIn);
-my ($title, $nodes, $edges) = getNodesAndEdges($reader);
 
-my $output = new IO::File(">$ssnOut");
-my $writer = new XML::Writer(DATA_MODE => 'true', DATA_INDENT => 2, OUTPUT => $output);
 
-writeMarkerSsn($nodes, $edges, $writer, $title, $markerData, $clusterMap, $abData, $metagenomeInfo, $cdhitInfo);
+
+my $ssn = openSsn($ssnIn);
+$ssn->parse;
+
+if ($isQuantify) {
+    $ssn->registerHandler(NODE_WRITER, \&writeQuantifyResults);
+} else {
+    $ssn->registerHandler(NODE_WRITER, \&writeMarkerResults);
+}
+
+$ssn->write($ssnOut);
 
 
 
@@ -118,151 +122,21 @@ sub getMarkerData {
 }
 
 
-sub getNodesAndEdges{
-    my $reader = shift;
-
-    my @nodes;
-    my @edges;
-    my $parser = XML::LibXML->new();
-    $reader->read();
-    if ($reader->nodeType == 8) { #node type 8 is a comment
-        print "XGMML made with ".$reader->value."\n";
-        $reader->read; #we do not want to start reading a comment
-    }
-    my $graphname = $reader->getAttribute('label');
-    my $firstnode = $reader->nextElement();
-    my $tmpstring = $reader->readOuterXml;
-    my $tmpnode = $parser->parse_string($tmpstring);
-    my $node = $tmpnode->firstChild;
-    
-    if ($reader->name() eq "node") {
-        push @nodes, $node;
-    }
-
-    while ($reader->nextSiblingElement()) {
-        $tmpstring = $reader->readOuterXml;
-        $tmpnode = $parser->parse_string($tmpstring);
-        $node = $tmpnode->firstChild;
-        if ($reader->name() eq "node") {
-            push @nodes, $node;
-        } elsif ($reader->name() eq "edge") {
-            push @edges, $node;
-        } else {
-            warn "not a node or an edge\n $tmpstring\n";
-        }
-    }
-    return ($graphname, \@nodes, \@edges);
-}
-
-
-sub writeMarkerSsn {
-    my $nodes = shift;
-    my $edges = shift;
-    my $writer = shift;
-    my $title = shift;
-    my $markerData = shift;
-    my $clusterMap = shift;
-    my $abData = shift;
-    my $mgInfo = shift;
-    my $cdhitInfo = shift;
-
-    $writer->startTag('graph', 'label' => $title . " ShortBRED markers", 'xmlns' => 'http://www.cs.rpi.edu/XGMML');
-    writeMarkerSsnNodes($nodes, $writer, $markerData, $clusterMap, $abData, $mgInfo, $cdhitInfo);
-    writeMarkerSsnEdges($edges, $writer, $markerData);
-    $writer->endTag(); 
-}
-
-
-sub writeMarkerSsnNodes {
-    my $nodes = shift;
-    my $writer = shift;
-    my $markerData = shift;
-    my $clusterMap = shift;
-    my $abd = shift; # Protein and cluster abundance dataa
-    my $mgInfo = shift;
-    my $cdhitInfo = shift;
-
-    foreach my $node (@{$nodes}) {
-        my $protId = $node->getAttribute('label');
-        my $nodeId = $node->getAttribute('id');
-
-        $writer->startTag('node', 'id' => $nodeId, 'label' => $protId);
-
-        foreach my $attribute ($node->getChildnodes) {
-            if ($attribute=~/^\s+$/) {
-                #print "\t badattribute: $attribute:\n";
-                #the parser is returning newline xml fields, this removes it
-                #code will break if we do not remove it.
-            } else {
-                my $attrType = $attribute->getAttribute('type');
-                my $attrName = $attribute->getAttribute('name');
-                if ($attrType eq 'list') {
-                    $writer->startTag('att', 'type' => $attrType, 'name' => $attrName);
-                    foreach my $listelement ($attribute->getElementsByTagName('att')) {
-                        $writer->emptyTag('att', 'type' => $listelement->getAttribute('type'),
-                                          'name' => $listelement->getAttribute('name'),
-                                          'value' => $listelement->getAttribute('value'));
-                    }
-                    $writer->endTag;
-                } elsif ($attrName eq 'interaction') {
-                    #do nothing
-                    #this tag causes problems and it is not needed, so we do not include it
-                } else {
-                    if (defined $attribute->getAttribute('value')) {
-                        $writer->emptyTag('att', 'type' => $attrType, 'name' => $attrName,
-                                          'value' => $attribute->getAttribute('value'));
-                    } else {
-                        $writer->emptyTag('att', 'type' => $attrType, 'name' => $attrName);
-                    }
-                }
-            }
-        }
-
-        writeResults($writer, $protId, $node, $markerData, $clusterMap, $abd, $mgInfo, $cdhitInfo);
-        
-        $writer->endTag(  );
-    }
-}
-
-
-sub writeResults {
-    my $writer = shift;
-    my $nodeId = shift;
-    my $node = shift;
-    my $markerData = shift;
-    my $clusterMap = shift;
-    my $abd = shift; # Protein and cluster abundance dataa
-    my $mgInfo = shift;
-    my $cdhitInfo = shift;
-
-    my @xids = expandMetanodeIds($nodeId, $node, $efiAnnoUtil);
-    push @xids, $nodeId; # xids = expanded IDs
-
-    if ($isQuantify) {
-        writeQuantifyResults($writer, $abd, $nodeId, $mgInfo, $cdhitInfo, @xids);
-    } else {
-        writeMarkerResults($writer, $markerData, $clusterMap, $cdhitInfo, @xids);
-    }
-}
-
-
 sub writeQuantifyResults {
-    my $writer = shift;
-    my $abd = shift;
-    my $origId = shift;
-    my $mgInfo = shift;
-    my $cdhitInfo = shift;
-    my @xids = @_;
+    my $nodeId = shift;
+    my $childNodeIds = shift;
+    my $fieldWriter = shift;
+    my $listWriter = shift;
 
-    my $mgList = $abd->{metagenomes};
+    my $mgList = $abData->{metagenomes};
 
     my (@mg, @vals, @markerIds, @seedIds, @mgMarker, @mgMarkerVals, @seedMgMarker);
-    foreach my $id (@xids) {
+    foreach my $id ($nodeId, @$childNodeIds) {
         # Check if there are any results for the current node (seed or not)
-        if (exists $abd->{proteins}->{$id}) {
+        if (exists $abData->{proteins}->{$id}) {
             # This node is a seed sequence
             if (exists $cdhitInfo->{seeds}->{$id}) {
-                my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $id);
+                my ($mgLocal, $valsLocal) = getQuantifyVals($id);
                 push @mg, @$mgLocal;
                 push @vals, @$valsLocal;
                 push @markerIds, $id;
@@ -275,79 +149,40 @@ sub writeQuantifyResults {
         }
 
         # Check if there are any results for the "parent" (seed) sequence.
-        if (exists $cdhitInfo->{members}->{$id} and exists $abd->{proteins}->{$cdhitInfo->{members}->{$id}}) {
+        if (exists $cdhitInfo->{members}->{$id} and exists $abData->{proteins}->{$cdhitInfo->{members}->{$id}}) {
             my $seed = $cdhitInfo->{members}->{$id};
-            my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seed);
+            my ($mgLocal, $valsLocal) = getQuantifyVals($seed);
             push @seedMgMarker, map { "$seed - $_" } @$mgLocal;
         }
-        
-        # This code is retained in case we want to add quantify results to the SSN in the future.
-        #for (my $i = 0; $i <= $#$mgList; $i++) {
-        #    my $mgId = $mgList->[$i];
-        #    my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
-        #    my $val = $abd->{proteins}->{$id}->{$mgId};
-        #    $hasVal = $hasVal ? $val > 0 : 0;
-        #    if ($hasVal) {
-        #        my $mgName = $mgId;
-        #        $mgName = $mgInfo->{$mgId}->{bodysite} if exists $mgInfo->{$mgId}->{bodysite} and $mgInfo->{$mgId}->{bodysite};
-        #        $mgName .= ", " . $mgInfo->{$mgId}->{gender} if exists $mgInfo->{$mgId}->{gender} and $mgInfo->{$mgId}->{gender};
-        #        push @mg, $mgName;
-        #        push @vals, $abd->{proteins}->{$id}->{$mgId};
-        #    }
-        #}
     }
 
     if (scalar @mgMarker) {
-        writeGnnListField($writer, "Metagenomes Identified by Markers", "string", \@mgMarker);
+        &$listWriter("Metagenomes Identified by Markers", "string", \@mgMarker);
     }
 
     if (scalar @seedMgMarker) {
-        writeGnnListField($writer, "Metagenomes Identified by CD-HIT Family", "string", \@seedMgMarker);
+        &$listWriter("Metagenomes Identified by CD-HIT Family", "string", \@seedMgMarker);
     }
-
-    # This code is retained in case we want to add quantify results to the SSN in the future.
-    #my $hasHit = scalar @vals;
-    #my $hasHitStr = $hasHit ? "true" : "false";
-    #if ($hasHit) {
-    #    writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
-    #    writeGnnListField($writer, "IDs with Non-zero Marker Count", "string", \@markerIds);
-    #    writeGnnListField($writer, "Metagenomes with Marker Presence", "string", \@mg);
-    #} else {
-    #    writeGnnField($writer, "Has Non-zero Marker Count", "string", $hasHitStr);
-    #}
-    #if (scalar @seedIds) { #exists $cdhitInfo->{members}->{$origId}) {
-    #    writeGnnField($writer, "Seed Sequence has Non-zero Marker Count", "string", $hasHitStr);
-    #    writeGnnListField($writer, "Seed Sequences with Non-zero Marker Count", "string", \@seedIds);
-    #    foreach my $seedId (@seedIds) {
-    #        my ($mgLocal, $valsLocal) = getQuantifyVals($abd, $mgInfo, $seedId);
-    #        push @mg, @$mgLocal;
-    #        push @vals, @$valsLocal;
-    #        $hasHit = scalar @vals;
-    #        $hasHitStr = $hasHit ? "true" : "false";
-    #    }
-    #}
 }
 
 
 sub getQuantifyVals {
-    my $abd = shift;
-    my $mgInfo = shift;
     my $id = shift;
 
-    my $mgList = $abd->{metagenomes};
+    my $mgList = $abData->{metagenomes};
 
     my (@mg, @vals);
     for (my $i = 0; $i <= $#$mgList; $i++) {
         my $mgId = $mgList->[$i];
-        my $hasVal = exists($abd->{proteins}->{$id}->{$mgId}) ? length($abd->{proteins}->{$id}->{$mgId}) : 0;
-        my $val = $abd->{proteins}->{$id}->{$mgId};
+        my $hasVal = exists($abData->{proteins}->{$id}->{$mgId}) ? length($abData->{proteins}->{$id}->{$mgId}) : 0;
+        my $val = $abData->{proteins}->{$id}->{$mgId};
         $hasVal = $hasVal ? $val > 0 : 0;
         if ($hasVal) {
             my $mgName = $mgId;
-            $mgName = $mgInfo->{$mgId}->{bodysite} if exists $mgInfo->{$mgId}->{bodysite} and $mgInfo->{$mgId}->{bodysite};
-            $mgName .= ", " . $mgInfo->{$mgId}->{gender} if exists $mgInfo->{$mgId}->{gender} and $mgInfo->{$mgId}->{gender};
+            $mgName = $metagenomeInfo->{$mgId}->{bodysite} if exists $metagenomeInfo->{$mgId}->{bodysite} and $metagenomeInfo->{$mgId}->{bodysite};
+            $mgName .= ", " . $metagenomeInfo->{$mgId}->{gender} if exists $metagenomeInfo->{$mgId}->{gender} and $metagenomeInfo->{$mgId}->{gender};
             push @mg, $mgName;
-            push @vals, $abd->{proteins}->{$id}->{$mgId};
+            push @vals, $abData->{proteins}->{$id}->{$mgId};
         }
     }
 
@@ -356,15 +191,14 @@ sub getQuantifyVals {
 
 
 sub writeMarkerResults {
-    my $writer = shift;
-    my $markerData = shift;
-    my $clusterMap = shift;
-    my $cdhitInfo = shift;
-    my @xids = @_;
+    my $nodeId = shift;
+    my $childNodeIds = shift;
+    my $fieldWriter = shift;
+    my $listWriter = shift;
 
     my (@markerTypeNames, @markerIsTrue, @markerCount, @markerIds, @markerClusters, @markerSingles,
         @contribsToMarker, %seedsInNode, %seedsOfNode, @idsWithMarkers);
-    foreach my $id (@xids) {
+    foreach my $id (@{$childNodeIds}, $nodeId) {
         # $cdhitInfo contains the mapping of IDs of members of cd-hit clusters to cd-hit seed sequence
         #   (this is not a seed seq)     (seed seq has marker data)
         if (exists $cdhitInfo->{members}->{$id}) {
@@ -402,76 +236,17 @@ sub writeMarkerResults {
 
     my @seedsInNode = keys %seedsInNode;
     if (scalar @seedsInNode) {
-        writeGnnListField($writer, "Seed Sequence(s)", "string", \@seedsInNode);
+        &$listWriter("Seed Sequence(s)", "string", \@seedsInNode);
     }
 
     my @seedsOfNode = keys %seedsOfNode;
     if (scalar @seedsOfNode) {
-        writeGnnListField($writer, "Seed Sequence Cluster(s)", "string", \@seedsOfNode);
+        &$listWriter("Seed Sequence Cluster(s)", "string", \@seedsOfNode);
     }
 
     if (scalar @idsWithMarkers) {
-        writeGnnListField($writer, "Marker Types", "string", \@markerTypeNames);
-        writeGnnListField($writer, "Number of Markers", "integer", \@markerCount);
-    }
-}
-
-
-sub writeMarkerSsnEdges {
-    my $edges = shift;
-    my $writer = shift;
-
-    foreach my $edge (@{$edges}) {
-        $writer->startTag('edge', 'id' => $edge->getAttribute('id'), 'label' => $edge->getAttribute('label'), 'source' => $edge->getAttribute('source'), 'target' => $edge->getAttribute('target'));
-        foreach my $attribute ($edge->getElementsByTagName('att')) {
-            if ($attribute->getAttribute('name') eq 'interaction' or $attribute->getAttribute('name')=~/rep-net/) {
-                #this tag causes problems and it is not needed, so we do not include it
-            } else {
-                $writer->emptyTag('att', 'name' => $attribute->getAttribute('name'), 'type' => $attribute->getAttribute('type'), 'value' =>$attribute->getAttribute('value'));
-            }
-        }
-        $writer->endTag;
-    }
-}
-
-
-sub writeGnnField {
-    my $writer = shift;
-    my $name = shift;
-    my $type = shift;
-    my $value = shift;
-
-    unless ($type eq 'string' or $type eq 'integer' or $type eq 'real') {
-        die "Invalid GNN type $type\n";
-    }
-
-    $writer->emptyTag('att', 'name' => $name, 'type' => $type, 'value' => $value);
-}
-
-sub writeGnnListField {
-    my $writer = shift @_;
-    my $name = shift @_;
-    my $type = shift @_;
-    my $valuesIn = shift @_;
-    my $toSortOrNot = shift @_;
-
-    unless($type eq 'string' or $type eq 'integer' or $type eq 'real'){
-        die "Invalid GNN type $type\n";
-    }
-    
-    my @values;
-    if (defined $toSortOrNot and $toSortOrNot) {
-        @values = sort @$valuesIn;
-    } else {
-        @values = @$valuesIn;
-    }
-
-    if (scalar @values) {
-        $writer->startTag('att', 'type' => 'list', 'name' => $name);
-        foreach my $element (@values) {
-            $writer->emptyTag('att', 'type' => $type, 'name' => $name, 'value' => $element);
-        }
-        $writer->endTag;
+        &$listWriter("Marker Types", "string", \@markerTypeNames);
+        &$listWriter("Number of Markers", "integer", \@markerCount);
     }
 }
 
@@ -491,14 +266,6 @@ sub getCdHitClusters {
     }
 
     close FILE;
-
-#    foreach my $cluster ($parser->get_clusters()) {
-#        foreach my $id ($parser->get_children($cluster)) {
-#            if ($cluster ne $id) {
-#                $info->{$id} = $cluster;
-#            }
-#        }
-#    }
 
     return $info;
 }
