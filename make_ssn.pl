@@ -108,7 +108,7 @@ sub getMarkerData {
             my $header = $_;
             (my $type = $header) =~ s/^.*_([TJQ]M)[0-9]*_.*$/$1/;
             $header =~ s/^>(tr|sp)\|/>/;
-            if ($header =~ m/^>([A-Z0-9]{6,})/) {
+            if ($header =~ m/^>([A-Z0-9z]{6,})/) {
                 my $id = $1;
                 $markerData->{$id} = {count => 0, type => $type} if not exists $markerData->{$id};
                 $markerData->{$id}->{count}++;
