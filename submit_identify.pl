@@ -141,7 +141,7 @@ if ($refDb ne "uniprot") {
 } else {
     $blastDbPath .= "/$defaultDb";
 }
-$blastDbPath .= ".fasta" if -f "$blastDbPath.fasta.pal";
+$blastDbPath .= ".fasta" if -f "$blastDbPath.fasta.pal" or -f "$blastDbPath.fasta.dmnd";
 
 my $sequenceDbPath = $ENV{EFI_DB_DIR} . "/" . $defaultDb . ".fasta";
 

@@ -178,7 +178,7 @@ sub saveSequence {
     my @annotations = $xmlNode->findnodes('./*');
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
-        my $attrType = $annotation->getType();
+        my $attrType = $annotation->getAttribute('type');
         if ($attrName eq EFI::Annotations::FIELD_ID_ACC) {
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
