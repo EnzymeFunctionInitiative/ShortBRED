@@ -227,10 +227,10 @@ if (not $parentQuantifyId) {
         }
     } else {
         my $numMg = scalar @metagenomeIds;
-        my $numFiles = $numMg < 24 ? 1 : int($numMg / 24 + 1);
-        my $maxTask = $numMg >= 24 ? 24 : $numMg;
-        if ($maxTask == 24) {
-            my $excessTask = int(($numFiles * 24 - $numMg) / $numFiles);
+        my $numFiles = $numMg < $np ? 1 : int($numMg / $np + 1);
+        my $maxTask = $numMg >= $np ? $np : $numMg;
+        if ($maxTask == $np) {
+            my $excessTask = int(($numFiles * $np - $numMg) / $numFiles);
             $maxTask = $maxTask - $excessTask;
         }
 
@@ -293,7 +293,7 @@ my $resFileMeanList = join(" ", map { $resFilesMean{$_} } @sortedMgIds);
 
 $B = $S->getBuilder();
 $submitName = "sb_merge_quantify";
-$B->resource(1, $np, "20gb");
+$B->resource(1, 1, "20gb");
 $B->addAction("python $localMergeApp $resFileMedianList -C $clusterResultMedian -p $proteinResultMedian -c $ssnClusterFile");
 $B->addAction("python $localMergeApp $resFileMedianList -C $clusterResultNormalizedMedian -p $proteinResultNormalizedMedian -c $ssnClusterFile -n");
 if ($agsFilePath) {

@@ -179,11 +179,11 @@ sub saveSequence {
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
         my $attrType = $annotation->getAttribute('type');
-        if ($attrName eq EFI::Annotations::FIELD_ID_ACC) {
+        if ($efiAnnoUtil->is_expandable_attr($attrName, EFI::Annotations::flag_repnode_only())) {
             my @accessionlists = $annotation->findnodes('./*');
             foreach my $accessionlist (@accessionlists) {
                 my $attrAcc = $accessionlist->getAttribute('value');
-                push @ids, $attrAcc;
+                push @ids, $attrAcc if $attrAcc =~ m/^z/;
             }
         }
         if ($attrName eq EFI::Annotations::FIELD_SEQ_KEY) {

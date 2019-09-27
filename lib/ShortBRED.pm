@@ -200,7 +200,11 @@ sub getMetagenomeInfo {
                 $name = $name_bodysite;
             }
 
-            $file = "$dbDir/$id/$file" if $file;
+            if ($file !~ m%/%) {
+                $file = "$dbDir/$id/$file";
+            } elsif ($file !~ m%^/%) { # Has a slash but not absolute; relative path
+                $file = "$dbDir/$file";
+            }
             $data->{$id} = {bodysite => $name, gender => $gender, file_path => $file};
         }
         close DB;
