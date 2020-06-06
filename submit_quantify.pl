@@ -273,7 +273,7 @@ if (not $parentQuantifyId) {
             $B->addAction("    python $sbQuantifyApp $searchTypeArgs --markers $tmpMarker --wgs $mgFile --results $resFileMedian --results-mean $resFileMean --tmp $sbOutputDir-$mgId");
             $c++;
         }
-        if ($c > 1) {
+        if ($c > 1 or $numFiles == 1) {
             $B->addAction("    rm $tmpMarker");
             $B->addAction("fi");
         }

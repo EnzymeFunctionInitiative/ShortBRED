@@ -7,7 +7,6 @@ use warnings;
 
 use Capture::Tiny qw(:all);
 use Getopt::Long;
-use File::Which qw(which);
 
 my ($result, $idFile, $outputFile, $blastDbPath, $minSeqLen, $maxSeqLen);
 $result = GetOptions(
@@ -24,7 +23,7 @@ die $usage if not defined $idFile or not -f $idFile or
               not defined $blastDbPath or not $blastDbPath;
 
 
-my $isBlast1 = which("fastacmd");
+my $isBlast1 = isBlast1();
 my $fastaCmd = $isBlast1 ? "fastacmd" : "blastdbcmd";
 my $dbFlag = $isBlast1 ? "-d" : "-db";
 my $entryFlag = $isBlast1 ? "-s" : "-entry";
@@ -86,5 +85,17 @@ sub get_ids {
     return @ids;
 }
 
+
+sub isBlast1 {
+    my ($out, $err) = capture {
+        system("fastacmd");
+    };
+
+    if ($err =~ m/Cannot initialize readdb/) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
 
 
