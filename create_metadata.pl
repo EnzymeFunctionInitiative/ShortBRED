@@ -171,6 +171,7 @@ sub countSsnAccessions2 {
         $metadata->{num_metanodes}++;
         $metadata->{is_uniref} = checkUniRef($xmlNode) if not exists $metadata->{is_uniref};
         $singleCount++ if not $clusterId or $clusterId =~ m/^S/;
+        $clusterSize{$clusterId}++; # for the current node
         $clusterSize{$clusterId} += $numChildNodes if $clusterId and $clusterId =~ m/^\d/;
         $spStatus{$clSizeId}->{$nodeId} = $status if $status;
     };

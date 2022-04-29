@@ -212,7 +212,7 @@ sub getClusterNumber {
     my @annotations = $xmlNode->findnodes('./*');
     foreach my $annotation (@annotations) {
         my $attrName = $annotation->getAttribute('name');
-        if ($attrName eq "Cluster Number") {
+        if ($attrName eq "Cluster Number" or $attrName eq "Sequence Count Cluster Number" or $attrName eq "Node Count Cluster Number") {
             $val = $annotation->getAttribute('value');
             last;
         } elsif ($attrName eq "Singleton Number") {
