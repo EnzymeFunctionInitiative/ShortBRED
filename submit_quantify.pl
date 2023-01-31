@@ -8,7 +8,7 @@ BEGIN {
     use lib $ENV{EFISHARED};
 }
 
-use Getopt::Long;
+use Getopt::Long qw(:config pass_through);
 use FindBin;
 use EFI::SchedulerApi;
 use EFI::Util qw(usesSlurm getLmod);
@@ -20,14 +20,9 @@ use ShortBRED qw(getMetagenomeInfo);
 die "Load efidb module in order to run this program." if not exists $ENV{EFIDBPATH};
 
 
-my ($dbFiles, $metagenomeIdList, $idResDirName, $qResDirName);
+my ($dbFiles, $metagenomeIdList, $idResDirName, $qResDirName, $jobDir);
 my ($np, $queue, $memQueue, $scheduler, $dryRun, $jobId, $ssnName, $inputSsn);
-my ($proteinFileNameMedian, $clusterFileNameMedian);
-my ($proteinFileNameMean, $clusterFileNameMean);
-my ($proteinFileNameNormalizedMedian, $clusterFileNameNormalizedMedian);
-my ($proteinFileNameNormalizedMean, $clusterFileNameNormalizedMean);
-my ($proteinFileNameGenomeNormalizedMedian, $clusterFileNameGenomeNormalizedMedian);
-my ($proteinFileNameGenomeNormalizedMean, $clusterFileNameGenomeNormalizedMean);
+my ($proteinFileName, $clusterFileName);
 my ($parentIdentifyId, $parentQuantifyId);
 my ($mergeAllRuns);
 my ($searchType);
@@ -37,16 +32,13 @@ my $result = GetOptions(
     "metagenome-db=s"           => \$dbFiles,
     "metagenome-ids=s"          => \$metagenomeIdList,
     
-    "id-dir=s"                  => \$idResDirName,
+    "results-dir-name=s"        => \$idResDirName,
     "quantify-dir=s"            => \$qResDirName,
-    "ssn-in=s"                  => \$inputSsn,
+    "job-dir=s"                 => \$jobDir,
+    "ssn-in=s"                  => \$inputSsn, # full path
     "ssn-out-name=s"            => \$ssnName,
-    "protein-file=s"            => \$proteinFileNameMedian,
-    "cluster-file=s"            => \$clusterFileNameMedian,
-    "protein-norm=s"            => \$proteinFileNameNormalizedMedian,
-    "cluster-norm=s"            => \$clusterFileNameNormalizedMedian,
-    "protein-genome-norm=s"     => \$proteinFileNameGenomeNormalizedMedian,
-    "cluster-genome-norm=s"     => \$clusterFileNameGenomeNormalizedMedian,
+    "protein-file=s"            => \$proteinFileName,
+    "cluster-file=s"            => \$clusterFileName,
 
     "parent-identify-id=i"      => \$parentIdentifyId,,
     "parent-quantify-id=i"      => \$parentQuantifyId,
@@ -58,7 +50,7 @@ my $result = GetOptions(
     "queue=s"                   => \$queue,
     "mem-queue=s"               => \$memQueue,
     "scheduler=s"               => \$scheduler,
-    "dryrun"                    => \$dryRun,
+    "dry-run"                   => \$dryRun,
 );
 
 my $usage =
@@ -100,25 +92,23 @@ my $usage =
     -cluster-genome-norm-mean   name of output file containing AGS normalized cluster abundances (mean)
 ";
 
-die $usage if not defined $dbFiles or not $dbFiles or not defined $metagenomeIdList or not $metagenomeIdList
-              or not defined $idResDirName or not $idResDirName or not defined $qResDirName
-              or not $qResDirName or not defined $queue or not $queue;
+die $usage if not $dbFiles or not $metagenomeIdList
+              or not $idResDirName or not $qResDirName
+              or not $queue or not $inputSsn;
 
 $memQueue = $queue                                      if not defined $memQueue or not $memQueue;
 $np = 24                                                if not defined $np or not $np;
 $scheduler = "slurm"                                    if not defined $scheduler or not $scheduler;
 $dryRun = 0                                             if not defined $dryRun;
-$clusterFileNameMedian = "cluster_abundance.txt"        if not defined $clusterFileNameMedian or not $clusterFileNameMedian;
-$proteinFileNameMedian = "protein_abundance.txt"        if not defined $proteinFileNameMedian or not $proteinFileNameMedian;
+$clusterFileName = "cluster_abundance"                  if not defined $clusterFileName or not $clusterFileName;
+$proteinFileName = "protein_abundance"                  if not defined $proteinFileName or not $proteinFileName;
 $parentQuantifyId = 0                                   if not defined $parentQuantifyId;
 $parentIdentifyId = 0                                   if not defined $parentIdentifyId;
 $mergeAllRuns = 0                                       if not defined $mergeAllRuns;
-$clusterFileNameMean = "$clusterFileNameMedian"         if not defined $clusterFileNameMean;
-$proteinFileNameMean = "$proteinFileNameMedian"         if not defined $proteinFileNameMean;
 
 $searchType = (defined $searchType and $searchType eq "diamond") ? "diamond" : "usearch";
 
-my ($inputDir, $parentInputDir, $outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentIdentifyId, $parentQuantifyId);
+my ($inputDir, $parentInputDir, $outputDir, $parentOutputDir, $scriptDir, $logDir) = initDirectoryStructure($parentIdentifyId, $parentQuantifyId, $jobDir);
 my ($S, $jobNamePrefix) = initScheduler($logDir);
 
 
@@ -127,15 +117,20 @@ my $sbModule = $ENV{SHORTBRED_MOD};
 my $sbQuantifyApp = $ENV{SHORTBRED_QUANTIFY};
 my $localMergeApp = "$efiSbDir/merge_shortbred.py";
 my $agsFilePath = exists $ENV{SHORTBRED_AGS_FILE} ? $ENV{SHORTBRED_AGS_FILE} : "";
+my $extraPerl = $ENV{EFI_PERL_ENV} // "";
 
-($clusterFileNameNormalizedMedian = $clusterFileNameMedian) =~ s/\.txt$/_normalized.txt/ if not defined $clusterFileNameNormalizedMedian or not $clusterFileNameNormalizedMedian;
-($proteinFileNameNormalizedMedian = $proteinFileNameMedian) =~ s/\.txt$/_normalized.txt/ if not defined $proteinFileNameNormalizedMedian or not $proteinFileNameNormalizedMedian;
-($clusterFileNameGenomeNormalizedMedian = $clusterFileNameMedian) =~ s/\.txt$/_genome_normalized.txt/ if not defined $clusterFileNameGenomeNormalizedMedian or not $clusterFileNameGenomeNormalizedMedian;
-($proteinFileNameGenomeNormalizedMedian = $proteinFileNameMedian) =~ s/\.txt$/_genome_normalized.txt/ if not defined $proteinFileNameGenomeNormalizedMedian or not $proteinFileNameGenomeNormalizedMedian;
-($clusterFileNameNormalizedMean = $clusterFileNameMean) =~ s/\.txt$/_normalized.txt.mean/ if not defined $clusterFileNameNormalizedMean or not $clusterFileNameNormalizedMean;
-($proteinFileNameNormalizedMean = $proteinFileNameMean) =~ s/\.txt$/_normalized.txt.mean/ if not defined $proteinFileNameNormalizedMean or not $proteinFileNameNormalizedMean;
-($clusterFileNameGenomeNormalizedMean = $clusterFileNameMean) =~ s/\.txt$/_genome_normalized.txt.mean/ if not defined $clusterFileNameGenomeNormalizedMean or not $clusterFileNameGenomeNormalizedMean;
-($proteinFileNameGenomeNormalizedMean = $proteinFileNameMean) =~ s/\.txt$/_genome_normalized.txt.mean/ if not defined $proteinFileNameGenomeNormalizedMean or not $proteinFileNameGenomeNormalizedMean;
+my $clusterFileNameMedian = "${clusterFileName}.txt";
+my $proteinFileNameMedian = "${proteinFileName}.txt";
+my $clusterFileNameNormalizedMedian = "${clusterFileName}_normalized.txt";
+my $proteinFileNameNormalizedMedian = "${proteinFileName}_normalized.txt";
+my $clusterFileNameGenomeNormalizedMedian = "${clusterFileName}_genome_normalized.txt";
+my $proteinFileNameGenomeNormalizedMedian = "${proteinFileName}_genome_normalized.txt";
+my $clusterFileNameMean = "${clusterFileName}_mean.txt";
+my $proteinFileNameMean = "${proteinFileName}_mean.txt";
+my $clusterFileNameNormalizedMean = "${clusterFileName}_normalized_mean.txt";
+my $proteinFileNameNormalizedMean = "${proteinFileName}_normalized_mean.txt";
+my $clusterFileNameGenomeNormalizedMean = "${clusterFileName}_genome_normalized_mean.txt";
+my $proteinFileNameGenomeNormalizedMean = "${proteinFileName}_genome_normalized_mean.txt";
 
 
 my $ssnClusterFile = "$inputDir/cluster";
@@ -152,8 +147,8 @@ my $proteinResultNormalizedMedian = "$outputDir/$proteinFileNameNormalizedMedian
 my $clusterResultGenomeNormalizedMedian = "$outputDir/$clusterFileNameGenomeNormalizedMedian";
 my $proteinResultGenomeNormalizedMedian = "$outputDir/$proteinFileNameGenomeNormalizedMedian";
 
-my $clusterResultMean = "$outputDir/$clusterFileNameMedian.mean";
-my $proteinResultMean = "$outputDir/$proteinFileNameMedian.mean";
+my $clusterResultMean = "$outputDir/$clusterFileNameMean";
+my $proteinResultMean = "$outputDir/$proteinFileNameMean";
 my $clusterResultNormalizedMean = "$outputDir/$clusterFileNameNormalizedMean";
 my $proteinResultNormalizedMean = "$outputDir/$proteinFileNameNormalizedMean";
 my $clusterResultGenomeNormalizedMean = "$outputDir/$clusterFileNameGenomeNormalizedMean";
@@ -318,6 +313,7 @@ $B->queue($memQueue);
 $B->resource(1, 1, "200gb");
 $B->addAction("MGIDS=\"$metagenomeIdList\"");
 $B->addAction("MGDB=\"$dbFiles\"");
+$B->addAction("source $extraPerl");
 $B->addAction("module load $sbModule");
 
 if ($mergeAllRuns) {
@@ -345,9 +341,10 @@ $B->addAction("    echo \$OUT > $outputDir/ssn.failed");
 $B->addAction("    rm -f $lockFile")                                        if $mergeAllRuns;
 $B->addAction("    exit 621");
 $B->addAction("fi");
-$B->addAction("zip -j $outputSsn.zip $outputSsn");
+$B->addAction("zip -j $outputDir/quantify_ssn.zip $outputSsn");
 $B->addAction("$efiSbDir/lock_merged_output.pl $lockFile unlock")           if $mergeAllRuns;
 $B->addAction("$efiSbDir/create_quantify_metadata.pl -protein-abundance $proteinMerged -metadata $metadataFile");
+$B->addAction("rm -rf $outputDir/quantify-temp-*");
 $B->addAction("touch $outputDir/job.completed");
 $depId = doSubmit($depId);
 
@@ -391,8 +388,9 @@ sub initScheduler {
 sub initDirectoryStructure {
     my $parentIdentifyId = shift;
     my $parentQuantifyId = shift;
+    my $jobDir = shift || "";
 
-    my $baseOutputDir = $ENV{PWD};
+    my $baseOutputDir = ($jobDir and -d $jobDir) ? $jobDir : $ENV{PWD};
     my $idOutputDir = "$baseOutputDir/$idResDirName";
     my $qOutputDir = "$idOutputDir/$qResDirName";
 

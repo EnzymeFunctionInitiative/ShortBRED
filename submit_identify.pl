@@ -8,7 +8,7 @@ BEGIN {
     use lib $ENV{EFI_SHARED};
 }
 
-use Getopt::Long;
+use Getopt::Long qw(:config pass_through);
 use FindBin;
 use EFI::SchedulerApi;
 use EFI::Util qw(usesSlurm getLmod);
@@ -29,7 +29,7 @@ my ($minSeqLen, $maxSeqLen, $searchType, $cdhitSid, $consThresh, $refDb, $diamon
 my $result = GetOptions(
 
     "ssn-in=s"          => \$inputSsn,
-    "tmpdir=s"          => \$outputDirName,
+    "results-dir-name=s"=> \$outputDirName,
     "ssn-out-name=s"    => \$outputSsnName,
     "cdhit-out-name=s"  => \$cdhitFileName,
 
@@ -80,8 +80,7 @@ my $usage =
     -dryrun         only output the commands to be executed, do not submit to cluster [optional]
 ";
 
-die $usage if not defined $inputSsn or not -f $inputSsn or not defined $outputDirName or not $outputDirName or
-              not defined $queue or not $queue or not defined $outputSsnName or not $outputSsnName;
+die $usage if not $inputSsn or not -f $inputSsn or not $outputDirName or not $queue or not $outputSsnName;
 
 
 $memQueue       = $queue        if not defined $memQueue or not $memQueue;
@@ -125,6 +124,7 @@ my $dbModule = $ENV{EFI_DB_MOD};
 my $sbModule = $ENV{SHORTBRED_MOD};
 my $sbParseSsnApp = $ENV{SHORTBRED_PARSESSN};
 my $sbIdentifyApp = $ENV{SHORTBRED_IDENTIFY};
+my $extraPerl = $ENV{EFI_PERL_ENV} // "";
 
 if ($searchType eq "diamond") {
     $blastDbPath = $ENV{EFI_DIAMOND_DB_DIR};
@@ -161,7 +161,8 @@ my $metadataFile = "$outputDir/metadata.tab";
 my $metaClusterSizeFile = "$outputDir/cluster_sizes.tab";
 my $metaSpClusterFile = "$outputDir/swissprot_clusters.tab";
 my $metaSpSingleFile = "$outputDir/swissprot_singletons.tab";
-my $ssnMarker = "$outputDir/$outputSsnName";
+my $ssnMarker = "$outputDir/$outputSsnName.xgmml";
+my $ssnMarkerZip = "$outputDir/identify_ssn.zip";
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
 my $submitFile = "";
@@ -173,7 +174,7 @@ if ($parentJobId) {
     $ssnAccessionFile = "$childOutputDir/accession";
     $ssnClusterFile = "$childOutputDir/cluster";
     $cdhitTableFile = (defined $cdhitFileName and $cdhitFileName) ? "$childOutputDir/$cdhitFileName" : "$childOutputDir/cdhit.txt";
-    $ssnMarker = "$childOutputDir/$outputSsnName";
+    $ssnMarker = "$childOutputDir/$outputSsnName.xgmml";
     $clusterSizeFile = "$childOutputDir/cluster.sizes";
     $metadataFile = "$childOutputDir/metadata.tab";
     $metaClusterSizeFile = "$childOutputDir/cluster_sizes.tab";
@@ -204,6 +205,7 @@ $submitName = "sb_get_clusters";
 $B->setScriptAbortOnError(0); # grep causes the script to abort if we have set -e in the script.
 $B->queue($memQueue);
 $B->resource(1, 1, "150gb");
+$B->addAction("source $extraPerl");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/unzip_file.pl -in $inputSsnZip -out $inputSsn") if $inputSsnZip =~ m/\.zip$/i;
 $B->addAction("HASCLUSTERNUM=`head -2000 $inputSsn | grep -m1 -e \"Cluster Number\" -e \"Singleton Number\"`");
@@ -296,11 +298,12 @@ $B = $S->getBuilder();
 $submitName = "sb_make_xgmml";
 $B->queue($memQueue);
 $B->resource(1, 1, "200gb");
+$B->addAction("source $extraPerl");
 $B->addAction("module load $sbModule");
 $B->addAction("$efiSbDir/create_metadata.pl " . join(" ", @metaParams));
 $B->addAction("$efiSbDir/make_cdhit_table.pl -cdhit-file $cdhitFile -cluster-map $ssnClusterFile -table-file $cdhitTableFile $colorFileArg");
 $B->addAction("$efiSbDir/make_ssn.pl -ssn-in $inputSsn -ssn-out $ssnMarker -marker-file $sbMarkerFile -cluster-map $ssnClusterFile -cdhit-file $cdhitTableFile");
-$B->addAction("zip -j $ssnMarker.zip $ssnMarker");
+$B->addAction("zip -j $ssnMarkerZip $ssnMarker");
 $B->addAction("touch $childOutputDir/job.completed");
 $depId = doSubmit($depId);
 

@@ -115,7 +115,7 @@ close METADATA;
 open CLUSTERSIZE, ">", $clusterSizeFile or die "Unable to write to cluster size file $clusterSizeFile: $!";
 print CLUSTERSIZE "Cluster Number\tCluster Sequence Count\n";
 #my @clusterIds = sort {$clusterSize->{$b} <=> $clusterSize->{$a}} keys %$clusterSize;
-my @clusterIds = sort { $a <=> $b } keys %$clusterSize;
+my @clusterIds = sort clusterSizeSortFn keys %$clusterSize;
 foreach my $id (@clusterIds) {
     print CLUSTERSIZE "$id\t" . $clusterSize->{$id} . "\n";
 }
@@ -146,6 +146,18 @@ close SPCLUSTER;
 
 
 
+
+
+sub clusterSizeSortFn {
+    return 1 if $a =~ m/^\D/ and $b =~ /^\d/;
+    return -1 if $b =~ m/^\D/ and $a =~ /^\d/;
+    my $aa = $a;
+    my $bb = $b;
+    if ($aa =~ s/^\D+(\d+)$/$1/ and $bb =~ s/^\D+(\d+)$/$1/) {
+        return $aa <=> $bb;
+    }
+    return $a <=> $b;
+}
 
 
 # Gets the node and edge objects, as well as writes any sequences in the XGMML to the sequence file.

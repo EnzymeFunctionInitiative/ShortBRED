@@ -157,6 +157,8 @@ def strat_sort( k ):
         key[0] = 0
     elif "S" not in key[0]:
         key[0] = int( key[0] )
+    else:
+        key[0] = int( key[0][1:] ) + 1e9 # hack to put singletons at the end
     #key[0] = 0 if key[0] == c_na else int( key[0] )
     return key
 
@@ -165,6 +167,7 @@ def write_nested_dict( dd, path, missing=0 ):
     rowheads = set( )
     for c, cdict in dd.items( ):
         rowheads.update( cdict )
+    print(rowheads)
     rowheads = sorted( rowheads, key=lambda x: strat_sort( x ) )
     with try_open( path, "w" ) as fh:
         print( "\t".join( ["Feature \ Sample"] + colheads ), file=fh )
