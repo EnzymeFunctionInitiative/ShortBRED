@@ -161,7 +161,7 @@ my $proteinMergedNormalized = "$targetDir/$proteinFileNameNormalizedMedian";
 my $clusterMergedGenomeNormalized = "$targetDir/$clusterFileNameGenomeNormalizedMedian";
 my $proteinMergedGenomeNormalized = "$targetDir/$proteinFileNameGenomeNormalizedMedian";
 
-my $outputSsn = "$targetDir/$ssnName"; # Merge all results into one SSN, in the results/ directory
+my $outputSsn = "$targetDir/$ssnName.xgmml"; # Merge all results into one SSN, in the results/ directory
 my $metadataFile = "$targetDir/metadata.tab";
 my $jobPrefix = (defined $jobId and $jobId) ? "${jobId}_" : "";
 my $submitName = "";
